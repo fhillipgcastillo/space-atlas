@@ -25,9 +25,9 @@ web — with objects positioned from measured catalog data, not hand placement.
    labels so the viewer always knows where they are.
 4. Objects that are modeled rather than measured are visually and textually
    distinguishable from measured ones.
-5. A known-object test suite places a reference table of well-measured objects
-   within 0.1% of their cited catalog distance and within 1 arcsecond of their
-   cited sky direction.
+5. A golden test suite places definitional reference directions — the galactic
+   pole, the galactic centre, Sagittarius A* — within 1 arcsecond, and reproduces
+   parallax-to-distance exactly.
 
 **Explicitly out of scope:** public hosting, CDN delivery, any backend service,
 user accounts, and mobile support. This runs from a local dev server against
@@ -260,13 +260,24 @@ galactic potential and is deliberately deferred.
 Per project discipline, every change passes an independent check. The
 project-level oracles:
 
-1. **Known-object golden tests (pipeline).** A reference table of well-measured
-   objects — Proxima Centauri, Sirius, Vega, Sagittarius A*, the Large
-   Magellanic Cloud, M31 — must land at their true positions within tolerance.
-   Each reference value is pinned to a cited primary source when the test is
-   written; none are taken from memory. This is the highest-value test in the
-   project, because coordinate-transform errors are the likeliest serious bug
-   and are invisible by inspection.
+1. **Golden transform tests (pipeline).** Coordinate errors are the likeliest
+   serious bug in this project and are invisible by inspection — a wrong
+   rotation produces a starfield that looks perfectly plausible and is entirely
+   wrong. Two rules follow.
+
+   **astropy performs the transform.** Hand-rolling the ICRS to Galactic
+   rotation is exactly the code that produces plausible-but-wrong output. The
+   tests verify our *usage* — right frame, right units, right axis order.
+
+   **Assertions use exactly-defined quantities, not published star distances.**
+   Literature distances for individual stars disagree at the percent level, so
+   a test hardcoding "Sirius is 8.709 ly" encodes a debate rather than a fact.
+   The suite instead asserts that the north galactic pole maps to latitude +90,
+   that the galactic centre maps to the origin and onto the +X axis, that
+   Sagittarius A* lands at l = 359.944, b = -0.046, that parallax inversion is
+   exact, and that tangential speed matches the standard 4.74047 relation.
+   Named-object distances are checked for self-consistency against the source
+   catalog, never against a hardcoded literature value.
 2. **Tiler invariants (property tests).** Every input point lands in exactly one
    leaf; every node's bounding box contains its points; total point count is
    preserved; a parent's subsample is a subset of its descendants.
