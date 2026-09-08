@@ -3,7 +3,12 @@ import pytest
 
 from universe_pipeline.config import L1_STELLAR_NEIGHBOURHOOD
 from universe_pipeline.records import FLAG_MODELED, TYPE_STAR
-from universe_pipeline.sources.gaia import build_gaia_adql, normalise_gaia
+from universe_pipeline.sources.gaia import (
+    BP_RP_NEUTRAL,
+    _column_to_array,
+    build_gaia_adql,
+    normalise_gaia,
+)
 
 
 def sample_table(**overrides: np.ndarray) -> dict[str, np.ndarray]:
@@ -75,9 +80,59 @@ def test_absolute_magnitude_uses_the_distance_modulus() -> None:
     assert float(record.abs_mag[0]) == pytest.approx(5.0, abs=1e-4)
 
 
-def test_missing_colour_falls_back_to_a_neutral_index() -> None:
-    record = normalise_gaia(sample_table(), L1_STELLAR_NEIGHBOURHOOD)
-    assert np.all(record.colour_index <= 65535)
+def test_missing_colour_falls_back_to_the_neutral_index() -> None:
+    # Source 2 clears the quality cuts, so a NaN bp_rp there actually reaches
+    # the colour code. Source 3 does not - it is dropped by the parallax cut
+    # first, which is why the obvious version of this test proves nothing.
+    # A missing colour must behave exactly as if the neutral value were stated.
+    missing = normalise_gaia(
+        sample_table(bp_rp=np.array([0.5, np.nan, 1.0])), L1_STELLAR_NEIGHBOURHOOD
+    )
+    explicit = normalise_gaia(
+        sample_table(bp_rp=np.array([0.5, BP_RP_NEUTRAL, 1.0])), L1_STELLAR_NEIGHBOURHOOD
+    )
+
+    assert int(missing.colour_index[1]) == int(explicit.colour_index[1])
+    # Zero is what an unhandled NaN would collapse to, so it must not be zero.
+    assert int(missing.colour_index[1]) > 0
+
+
+def test_column_to_array_accepts_a_plain_unmasked_column() -> None:
+    # astropy returns a plain Column, which has no .filled at all, whenever a
+    # column happens to have no gaps - and which columns those are varies with
+    # whatever each chunk returns.
+    from astropy.table import Column
+
+    result = _column_to_array(Column([1.0, 2.0, 3.0], name="parallax"))
+
+    np.testing.assert_array_equal(result, [1.0, 2.0, 3.0])
+
+
+def test_column_to_array_turns_masked_float_gaps_into_nan() -> None:
+    from astropy.table import MaskedColumn
+
+    result = _column_to_array(
+        MaskedColumn([1.0, 2.0, 3.0], mask=[False, True, False], name="radial_velocity")
+    )
+
+    assert result[0] == 1.0
+    assert np.isnan(result[1])
+    assert result[2] == 3.0
+
+
+def test_column_to_array_preserves_large_source_ids_exactly() -> None:
+    # Gaia source_id runs to about 4.3e18, far beyond the 2**53 where float64
+    # stops representing integers exactly. Widening an integer column to float
+    # to carry NaN would silently corrupt identifiers.
+    from astropy.table import MaskedColumn
+
+    big = 4295806720000000001
+    result = _column_to_array(
+        MaskedColumn([big, big + 1], mask=[False, False], dtype=np.uint64, name="source_id")
+    )
+
+    assert int(result[0]) == big
+    assert int(result[1]) == big + 1
 
 
 def test_adql_applies_the_configured_limits() -> None:
