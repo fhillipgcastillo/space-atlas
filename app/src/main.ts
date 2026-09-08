@@ -1,5 +1,4 @@
-export function boot(): string {
-  return 'universe-map';
-}
+import { Viewer } from './core/viewer.js';
 
-boot();
+const viewer = new Viewer(document.body);
+viewer.start();
