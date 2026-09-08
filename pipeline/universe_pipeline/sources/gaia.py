@@ -54,7 +54,12 @@ def fetch_gaia_chunk(
     job = Gaia.launch_job_async(build_gaia_adql(layer, healpix_lo, healpix_hi))
     table = job.get_results()
     arrays = {name: _column_to_array(table[name]) for name in table.colnames}
-    np.savez_compressed(cached, **arrays)
+
+    # Write then rename: an interrupted download must not leave a truncated
+    # file that a later run would load from cache and trust.
+    staging = cached.with_suffix(".npz.part")
+    np.savez_compressed(staging, **arrays)
+    staging.replace(cached)
     return arrays
 
 

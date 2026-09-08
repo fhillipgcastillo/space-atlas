@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -37,6 +39,36 @@ def _synthetic(count: int, layer: LayerConfig, seed: int) -> ObjectRecord:
     )
 
 
+FetchFn = Callable[[LayerConfig, int, int, Path], Mapping[str, np.ndarray]]
+
+
+def fetch_layer_chunks(
+    layer: LayerConfig,
+    chunks: int,
+    cache_dir: Path,
+    workers: int,
+    fetch: FetchFn = fetch_gaia_chunk,
+) -> list[ObjectRecord]:
+    """Fetch and normalise every sky chunk, returned in chunk order."""
+    # Time is spent in the archive executing queries, not transferring rows, so
+    # the run is bound by how many queries are in flight rather than bandwidth.
+    edges = np.linspace(0, HEALPIX8_TOTAL, chunks + 1, dtype=int)
+    results: list[ObjectRecord | None] = [None] * chunks
+    done = 0
+
+    def one(index: int) -> tuple[int, ObjectRecord]:
+        table = fetch(layer, int(edges[index]), int(edges[index + 1]) - 1, cache_dir)
+        return index, normalise_gaia(table, layer)
+
+    with ThreadPoolExecutor(max_workers=max(workers, 1)) as pool:
+        for index, part in pool.map(one, range(chunks)):
+            results[index] = part
+            done += 1
+            print(f"chunk {done}/{chunks}: {len(part)} sources", flush=True)
+
+    return [part for part in results if part is not None]
+
+
 def _concat(records: list[ObjectRecord]) -> ObjectRecord:
     return ObjectRecord(
         position_ly=np.concatenate([r.position_ly for r in records]),
@@ -60,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         help="skip Gaia and bake COUNT deterministic placeholder stars",
     )
     parser.add_argument("--chunks", type=int, default=48, help="number of Gaia sky chunks")
+    parser.add_argument("--workers", type=int, default=6, help="concurrent archive queries")
     args = parser.parse_args(argv)
 
     layer = LAYERS[args.layer]
@@ -68,13 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         record = _synthetic(args.synthetic, layer, seed=1)
         print(f"synthetic: {len(record)} placeholder stars")
     else:
-        edges = np.linspace(0, HEALPIX8_TOTAL, args.chunks + 1, dtype=int)
-        parts: list[ObjectRecord] = []
-        for i in range(args.chunks):
-            table = fetch_gaia_chunk(layer, int(edges[i]), int(edges[i + 1]) - 1, args.cache)
-            part = normalise_gaia(table, layer)
-            parts.append(part)
-            print(f"chunk {i + 1}/{args.chunks}: {len(part)} sources", flush=True)
+        parts = fetch_layer_chunks(layer, args.chunks, args.cache, args.workers)
         record = _concat(parts)
         print(f"gaia: {len(record)} sources total")
 
