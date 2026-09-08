@@ -55,12 +55,18 @@ def fetch_gaia_chunk(
     table = job.get_results()
     arrays = {name: _column_to_array(table[name]) for name in table.colnames}
 
-    # Write then rename: an interrupted download must not leave a truncated
-    # file that a later run would load from cache and trust.
-    staging = cached.with_suffix(".npz.part")
-    np.savez_compressed(staging, **arrays)
-    staging.replace(cached)
+    write_cache_atomic(cached, arrays)
     return arrays
+
+
+def write_cache_atomic(path: Path, arrays: Mapping[str, np.ndarray]) -> None:
+    """Write a chunk cache so an interrupted run leaves no half-written file."""
+    staging = path.with_name(path.name + ".part")
+    # savez_compressed appends .npz to a *path* that lacks it; a file handle
+    # is written verbatim.
+    with staging.open("wb") as handle:
+        np.savez_compressed(handle, **arrays)
+    staging.replace(path)
 
 
 def _column_to_array(column: object) -> np.ndarray:

@@ -151,3 +151,37 @@ def test_drops_a_bailer_jones_distance_below_the_parallax_quality_cut() -> None:
     record = normalise_gaia(table, L1_STELLAR_NEIGHBOURHOOD)
 
     assert list(record.catalog_id) == [1, 2]
+
+
+def test_cache_is_written_at_exactly_the_requested_path(tmp_path) -> None:
+    # savez_compressed silently appends .npz to a path lacking it, which
+    # previously made the staging file and the rename target disagree.
+    from universe_pipeline.sources.gaia import write_cache_atomic
+
+    target = tmp_path / "gaia-chunk-000-063.npz"
+    write_cache_atomic(target, {"source_id": np.arange(4, dtype=np.uint64)})
+
+    assert target.exists()
+    assert [p.name for p in tmp_path.iterdir()] == [target.name]
+
+
+def test_cached_arrays_survive_the_round_trip(tmp_path) -> None:
+    from universe_pipeline.sources.gaia import write_cache_atomic
+
+    target = tmp_path / "chunk.npz"
+    big = np.array([4295806720000000001, 4295806720000000002], dtype=np.uint64)
+    write_cache_atomic(target, {"source_id": big, "parallax": np.array([1.5, np.nan])})
+
+    with np.load(target) as data:
+        np.testing.assert_array_equal(data["source_id"], big)
+        assert np.isnan(data["parallax"][1])
+
+
+def test_no_staging_file_is_left_behind_on_success(tmp_path) -> None:
+    from universe_pipeline.sources.gaia import write_cache_atomic
+
+    target = tmp_path / "chunk.npz"
+    write_cache_atomic(target, {"x": np.zeros(2)})
+
+    assert list(tmp_path.glob("*.part")) == []
+    assert list(tmp_path.glob("*.part.npz")) == []
