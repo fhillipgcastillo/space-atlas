@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from universe_pipeline.config import LayerConfig
+from universe_pipeline.config import GAIA_TUNING, GaiaTuning, LayerConfig
 from universe_pipeline.frames import (
     LY_PER_PC,
     icrs_to_galactic_cartesian,
@@ -27,7 +27,13 @@ BP_RP_MAX = 5.0
 BP_RP_NEUTRAL = 0.8
 
 
-def build_gaia_adql(layer: LayerConfig, healpix_lo: int, healpix_hi: int) -> str:
+def build_gaia_adql(
+    layer: LayerConfig,
+    healpix_lo: int,
+    healpix_hi: int,
+    *,
+    tuning: GaiaTuning = GAIA_TUNING,
+) -> str:
     """One chunk of the layer, bounded by HEALPix level-8 source_id range."""
     # Gaia source_id encodes HEALPix level 12 in bits 59 and up.
     shift = 2 ** (59 - 2 * 8)
@@ -38,9 +44,9 @@ SELECT g.source_id, g.ra, g.dec, g.parallax, g.parallax_over_error,
 FROM gaiadr3.gaia_source AS g
 LEFT JOIN external.gaiaedr3_distance AS d ON d.source_id = g.source_id
 WHERE g.source_id BETWEEN {healpix_lo * shift} AND {(healpix_hi + 1) * shift - 1}
-  AND g.phot_g_mean_mag < {layer.g_mag_limit}
-  AND g.parallax_over_error > {layer.min_parallax_over_error}
-  AND g.parallax > {1000.0 / (layer.max_radius_ly / LY_PER_PC)}
+  AND g.phot_g_mean_mag < {tuning.g_mag_limit}
+  AND g.parallax_over_error > {tuning.min_parallax_over_error}
+  AND g.parallax > {1000.0 / (layer.max_radius / LY_PER_PC)}
 """.strip()
 
 
@@ -91,7 +97,12 @@ def _column(table: Mapping[str, np.ndarray], name: str) -> np.ndarray:
     return np.asarray(table[name], dtype=np.float64)
 
 
-def normalise_gaia(table: Mapping[str, np.ndarray], layer: LayerConfig) -> ObjectRecord:
+def normalise_gaia(
+    table: Mapping[str, np.ndarray],
+    layer: LayerConfig,
+    *,
+    tuning: GaiaTuning = GAIA_TUNING,
+) -> ObjectRecord:
     """Gaia columns to layer-space records. Drops anything it cannot place."""
     parallax = _column(table, "parallax")
     parallax_snr = _column(table, "parallax_over_error")
@@ -105,7 +116,7 @@ def normalise_gaia(table: Mapping[str, np.ndarray], layer: LayerConfig) -> Objec
     )
     # The SNR cut gates both branches: a Bailer-Jones distance is derived from
     # the same parallax under a prior, so below the cut it reports the prior.
-    good_parallax = parallax_snr > layer.min_parallax_over_error
+    good_parallax = parallax_snr > tuning.min_parallax_over_error
     distance_pc = np.where(
         np.isfinite(bailer_jones),
         bailer_jones,
@@ -115,8 +126,8 @@ def normalise_gaia(table: Mapping[str, np.ndarray], layer: LayerConfig) -> Objec
 
     keep = np.isfinite(distance_pc) & (distance_pc > 0.0)
     distance_ly = distance_pc * LY_PER_PC
-    keep &= distance_ly >= layer.min_radius_ly
-    keep &= distance_ly <= layer.max_radius_ly
+    keep &= distance_ly >= layer.min_radius
+    keep &= distance_ly <= layer.max_radius
 
     ra = _column(table, "ra")[keep]
     dec = _column(table, "dec")[keep]

@@ -28,9 +28,9 @@ def _synthetic(count: int, layer: LayerConfig, seed: int) -> ObjectRecord:
     rng = np.random.default_rng(seed)
     direction = rng.normal(size=(count, 3))
     direction /= np.linalg.norm(direction, axis=1, keepdims=True)
-    radius = layer.max_radius_ly * rng.uniform(0.0, 1.0, size=(count, 1)) ** (1 / 3)
+    radius = layer.max_radius * rng.uniform(0.0, 1.0, size=(count, 1)) ** (1 / 3)
     return ObjectRecord(
-        position_ly=direction * np.maximum(radius, layer.min_radius_ly),
+        position_ly=direction * np.maximum(radius, layer.min_radius),
         velocity_km_s=rng.normal(0.0, 30.0, size=(count, 3)).astype(np.float32),
         abs_mag=rng.normal(4.0, 3.0, size=count).astype(np.float32),
         colour_index=rng.integers(0, 65535, size=count, dtype=np.uint16),
