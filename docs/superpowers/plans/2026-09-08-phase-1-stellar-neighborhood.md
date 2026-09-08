@@ -1780,15 +1780,26 @@ def iter_nodes(root: OctreeNode) -> Iterator[OctreeNode]:
         stack.extend(reversed(node.children))
 
 
-def _geometric_error(bbox_min: np.ndarray, bbox_max: np.ndarray, point_count: int) -> float:
+def _geometric_error(
+    bbox_min: np.ndarray, bbox_max: np.ndarray, max_points_per_node: int
+) -> float:
     """Approximate spacing between the points a node draws.
 
     A node holding k points spread across a box of diagonal D has mean spacing
     of roughly D / k^(1/3). That is the distance a viewer would need to resolve
     before the node stops being a good enough stand-in for its children.
+
+    k is the *budget*, not the node's actual point count, for every node
+    including leaves. The traversal relies on error decreasing strictly from
+    parent to child, and a node's own count breaks that: a leaf holding a
+    single point would report its whole diagonal, far more than the parent
+    that spent its full budget on the same region. Tying the error to the box
+    alone makes it exactly halve at each level. A sparse leaf is therefore
+    reported as finer than it truly is, which only ever refines less - and a
+    leaf has nothing left to refine into.
     """
     diagonal = float(np.linalg.norm(bbox_max - bbox_min))
-    return diagonal / max(point_count, 1) ** (1.0 / 3.0)
+    return diagonal / max(max_points_per_node, 1) ** (1.0 / 3.0)
 
 
 def _child_box(
@@ -1818,7 +1829,7 @@ def _build(
             bbox_min=bbox_min,
             bbox_max=bbox_max,
             indices=indices.astype(np.uint32),
-            geometric_error=_geometric_error(bbox_min, bbox_max, total),
+            geometric_error=_geometric_error(bbox_min, bbox_max, max_points_per_node),
             total_points=total,
         )
 
@@ -2077,8 +2088,22 @@ def _node_to_json(node: OctreeNode) -> dict[str, Any]:
     }
 
 
+# Task 11 packs the vertex index into 20 bits of the pick identifier, so a tile
+# holding more points than this cannot be picked correctly. The octree's depth
+# cap means a node that hits MAX_DEPTH keeps every remaining point rather than
+# subdividing further, so a large pile of coincident sources - duplicate catalog
+# entries, say - can exceed the nominal budget. Fail loudly rather than write a
+# tile whose far end is silently unpickable.
+MAX_POINTS_PER_TILE_HARD_LIMIT = 1 << 20
+
+
 def _write_tiles(record: ObjectRecord, node: OctreeNode, out_dir: Path) -> None:
     idx = node.indices
+    if idx.size > MAX_POINTS_PER_TILE_HARD_LIMIT:
+        raise ValueError(
+            f"node {node.path} holds {idx.size} points, above the "
+            f"{MAX_POINTS_PER_TILE_HARD_LIMIT} the pick encoding can address"
+        )
     points = TilePoints(
         position=record.position_ly[idx],
         velocity=record.velocity_km_s[idx],
