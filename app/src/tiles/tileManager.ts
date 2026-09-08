@@ -1,4 +1,5 @@
-import { Group, type Points, type RawShaderMaterial } from 'three';
+import { Group, type Points, RawShaderMaterial } from 'three';
+import { MAX_TILE_SLOTS } from '../render/pickIds.js';
 import { createTileMesh } from '../render/tileMesh.js';
 import { TileCache } from './cache.js';
 import type { DecodedTile } from './format.js';
@@ -27,9 +28,13 @@ const BYTES_PER_POINT = 20;
 export class TileManager {
   readonly group = new Group();
   readonly meshes = new Map<string, Points>();
+  /** Picking addresses tiles by slot; the decoded tile is kept for hover lookups. */
+  readonly tilesBySlot = new Map<number, { tile: DecodedTile; mesh: Points }>();
 
   private readonly cache: TileCache<Points>;
   private readonly loader: TileLoader<DecodedTile>;
+  private readonly slotByPath = new Map<string, number>();
+  private nextSlot = 0;
 
   constructor(
     private readonly baseUrl: string,
@@ -41,10 +46,17 @@ export class TileManager {
     this.cache.onEvict = (path, mesh) => {
       this.group.remove(mesh);
       this.meshes.delete(path);
+      const slot = mesh.userData['tileSlot'];
+      if (typeof slot === 'number' && this.tilesBySlot.get(slot)?.mesh === mesh) {
+        this.tilesBySlot.delete(slot);
+      }
+      this.slotByPath.delete(path);
       mesh.geometry.dispose();
       // createTileMesh clones the material per tile; the shared colour-ramp
       // texture it references is not owned by the clone and survives this.
       if (!Array.isArray(mesh.material)) mesh.material.dispose();
+      const pickMaterial = mesh.userData['pickMaterial'];
+      if (pickMaterial instanceof RawShaderMaterial) pickMaterial.dispose();
       this.loader.forget(path);
     };
 
@@ -54,7 +66,10 @@ export class TileManager {
     );
     this.loader.onLoaded = (path, tile) => {
       const mesh = createTileMesh(tile, this.material);
+      const slot = this.slotFor(path);
+      mesh.userData['tileSlot'] = slot;
       this.meshes.set(path, mesh);
+      this.tilesBySlot.set(slot, { tile, mesh });
       this.group.add(mesh);
       this.cache.set(path, mesh, Math.max(tile.pointCount * BYTES_PER_POINT, 1));
     };
@@ -100,5 +115,20 @@ export class TileManager {
 
   dispose(): void {
     this.cache.clear();
+  }
+
+  private slotFor(path: string): number {
+    const existing = this.slotByPath.get(path);
+    if (existing !== undefined) return existing;
+    // Round-robin, but skipping occupied slots: reusing a live slot would make
+    // every hover on the old tile report a point from the new one.
+    for (let i = 0; i < MAX_TILE_SLOTS; i++) {
+      const slot = (this.nextSlot + i) % MAX_TILE_SLOTS;
+      if (this.tilesBySlot.has(slot)) continue;
+      this.nextSlot = (slot + 1) % MAX_TILE_SLOTS;
+      this.slotByPath.set(path, slot);
+      return slot;
+    }
+    throw new Error(`tile manager: no free pick slot for ${path}`);
   }
 }
