@@ -16,3 +16,4 @@ public/data/
 
 # Test fixtures are the exception: small, checked in deliberately.
 !tests/fixtures/**
+*.egg-info/

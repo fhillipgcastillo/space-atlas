@@ -1,6 +1,17 @@
 # Universe Map Phase 1 — Stellar Neighborhood Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+## Execution protocol
+
+One subagent per task, on Opus, in the shared working tree.
+
+- **Tests are the oracle.** A task is done when its own tests pass and the repo-wide checks stay green. There is no per-task reviewer; the tests in each task are written before the implementation precisely so they can carry that weight.
+- **Subagents do not run `git`.** Files across concurrently-dispatched tasks are disjoint, but a shared git index is not. The orchestrator commits.
+- **Stay inside the task.** Do not refactor, rename, restyle, or "improve" anything outside the files the task lists. If you spot a real defect out of scope, report it in your final message rather than fixing it.
+- **Never weaken a test to make it pass.** If a test looks wrong, say so explicitly and explain why; do not delete, skip, or narrow it.
+- **Report honestly.** If a step fails, include the actual output. A skipped or filtered check is a failure, not a pass.
+- **Review happens only at demoable checkpoints** — after Task 9, Task 11 and Task 12 — scoped strictly to the tasks in that batch.
 
 **Goal:** Fly through the real stellar neighborhood — millions of Gaia DR3 stars streamed from baked octree tiles, with hover identification and a permanent Earth anchor.
 
