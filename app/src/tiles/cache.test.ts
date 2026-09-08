@@ -45,3 +45,27 @@ describe('TileCache', () => {
     expect(cache.get('big')).toBe('B');
   });
 });
+
+describe('TileCache replacement', () => {
+  it('evicts the replaced value so its GPU resources are freed', () => {
+    const cache = new TileCache<string>(1000);
+    const onEvict = vi.fn();
+    cache.onEvict = onEvict;
+    cache.set('a', 'first', 40);
+    cache.set('a', 'second', 60);
+
+    expect(onEvict).toHaveBeenCalledWith('a', 'first');
+    expect(cache.byteCount).toBe(60);
+    expect(cache.get('a')).toBe('second');
+  });
+
+  it('does not evict when the same value is re-set', () => {
+    const cache = new TileCache<string>(1000);
+    const onEvict = vi.fn();
+    cache.onEvict = onEvict;
+    cache.set('a', 'same', 40);
+    cache.set('a', 'same', 50);
+
+    expect(onEvict).not.toHaveBeenCalled();
+  });
+});

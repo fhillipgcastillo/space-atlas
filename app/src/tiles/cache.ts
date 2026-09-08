@@ -41,6 +41,9 @@ export class TileCache<T> {
     if (existing) {
       this.bytes -= existing.bytes;
       this.entries.delete(path);
+      // The replaced value still owns GPU resources and, downstream, a slot
+      // registration that would otherwise point at a discarded mesh.
+      if (existing.value !== value) this.onEvict(path, existing.value);
     }
     this.entries.set(path, { value, bytes });
     this.bytes += bytes;

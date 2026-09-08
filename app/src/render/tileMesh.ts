@@ -28,6 +28,9 @@ export function createTileMesh(tile: DecodedTile, material: RawShaderMaterial): 
   const tileMaterial = material.clone();
   tileMaterial.uniforms['uBboxMin']!.value = min;
   tileMaterial.uniforms['uBboxExtent']!.value = max.clone().sub(min);
+  // cloneUniforms copies anything with isTexture, and material.dispose() does
+  // not dispose textures, so every clone would leak a ramp on eviction.
+  tileMaterial.uniforms['uColourRamp']!.value = material.uniforms['uColourRamp']!.value;
 
   const points = new Points(geometry, tileMaterial);
   points.frustumCulled = false;

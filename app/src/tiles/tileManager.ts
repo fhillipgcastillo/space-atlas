@@ -21,9 +21,9 @@ export const DEFAULT_OPTIONS: TileManagerOptions = {
   gpuByteBudget: 512 * 1024 * 1024,
 };
 
-// 10 bytes of vertex attributes per point, plus the CPU-side copy Three keeps
-// alive in the BufferAttribute until the geometry is disposed.
-const BYTES_PER_POINT = 20;
+// 10 bytes of GPU attributes, the CPU-side BufferAttribute copy Three keeps
+// until dispose, and the DecodedTile retained in tilesBySlot for hover.
+const BYTES_PER_POINT = 41;
 
 export class TileManager {
   readonly group = new Group();
