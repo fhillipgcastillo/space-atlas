@@ -12,7 +12,7 @@ import numpy as np
 
 from universe_pipeline.build import build_layer
 from universe_pipeline.config import L1_STELLAR_NEIGHBOURHOOD, LayerConfig
-from universe_pipeline.records import TYPE_STAR, ObjectRecord
+from universe_pipeline.records import CLASS_STAR, ObjectRecord, pack_type
 from universe_pipeline.sources.gaia import fetch_gaia_chunk, normalise_gaia
 
 LAYERS: dict[str, LayerConfig] = {
@@ -34,7 +34,7 @@ def _synthetic(count: int, layer: LayerConfig, seed: int) -> ObjectRecord:
         velocity_km_s=rng.normal(0.0, 30.0, size=(count, 3)).astype(np.float32),
         abs_mag=rng.normal(4.0, 3.0, size=count).astype(np.float32),
         colour_index=rng.integers(0, 65535, size=count, dtype=np.uint16),
-        type_flags=np.full(count, TYPE_STAR, dtype=np.uint8),
+        type_flags=np.full(count, pack_type(CLASS_STAR), dtype=np.uint8),
         catalog_id=np.arange(count, dtype=np.uint64),
     )
 

@@ -2,7 +2,12 @@ import numpy as np
 import pytest
 
 from universe_pipeline.config import L1_STELLAR_NEIGHBOURHOOD
-from universe_pipeline.records import FLAG_MODELED, FLAG_NO_RADIAL_VELOCITY, TYPE_STAR
+from universe_pipeline.records import (
+    CLASS_STAR,
+    FLAG_MODELED,
+    FLAG_NO_RADIAL_VELOCITY,
+    object_class,
+)
 from universe_pipeline.sources.gaia import (
     BP_RP_NEUTRAL,
     _column_to_array,
@@ -62,7 +67,7 @@ def test_drops_sources_beyond_the_layer_radius() -> None:
 
 def test_all_records_are_measured_stars() -> None:
     record = normalise_gaia(sample_table(), L1_STELLAR_NEIGHBOURHOOD)
-    assert np.all(record.type_flags & TYPE_STAR)
+    assert np.all(object_class(record.type_flags) == CLASS_STAR)
     assert not np.any(record.type_flags & FLAG_MODELED)
 
 
@@ -140,7 +145,7 @@ def test_unknown_radial_velocity_is_flagged_but_a_measured_zero_is_not() -> None
 def test_flagging_missing_velocity_preserves_the_object_type() -> None:
     record = normalise_gaia(sample_table(), L1_STELLAR_NEIGHBOURHOOD)
 
-    assert np.all(record.type_flags & TYPE_STAR)
+    assert np.all(object_class(record.type_flags) == CLASS_STAR)
     assert not np.any(record.type_flags & FLAG_MODELED)
 
 

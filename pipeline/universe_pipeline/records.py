@@ -6,14 +6,34 @@ from dataclasses import dataclass
 
 import numpy as np
 
-FLAG_MODELED = 1 << 0
-TYPE_STAR = 1 << 1
-TYPE_GALAXY = 1 << 2
-TYPE_BLACK_HOLE = 1 << 3
-TYPE_NEBULA = 1 << 4
-TYPE_CLUSTER = 1 << 5
+CLASS_MASK = 0x0F
+FLAG_MASK = 0xF0
+
+CLASS_UNKNOWN = 0
+CLASS_STAR = 1
+CLASS_GALAXY = 2
+CLASS_BLACK_HOLE = 3
+CLASS_NEBULA = 4
+CLASS_CLUSTER = 5
+CLASS_PLANET = 6
+CLASS_MOON = 7
+
+FLAG_MODELED = 0x10
 # Velocity's radial component is unknown, stored as zero. Not a measured zero.
-FLAG_NO_RADIAL_VELOCITY = 1 << 6
+FLAG_NO_RADIAL_VELOCITY = 0x20
+FLAG_NOMINAL_MAGNITUDE = 0x40
+
+
+def pack_type(cls: int, flags: int = 0) -> int:
+    if not 0 <= cls <= CLASS_MASK:
+        raise ValueError(f"object class {cls} does not fit in the class nibble")
+    if flags & CLASS_MASK:
+        raise ValueError(f"flag bits {flags:#04x} overlap the class nibble")
+    return cls | flags
+
+
+def object_class(packed: np.ndarray) -> np.ndarray:
+    return np.asarray(packed) & CLASS_MASK
 
 
 @dataclass

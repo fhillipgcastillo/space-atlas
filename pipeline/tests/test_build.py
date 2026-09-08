@@ -5,7 +5,7 @@ import numpy as np
 
 from universe_pipeline.build import build_layer
 from universe_pipeline.config import L1_STELLAR_NEIGHBOURHOOD
-from universe_pipeline.records import TYPE_STAR, ObjectRecord
+from universe_pipeline.records import CLASS_STAR, ObjectRecord, pack_type
 from universe_pipeline.tileformat import decode_tile
 
 
@@ -19,7 +19,7 @@ def synthetic_record(n: int, seed: int = 3) -> ObjectRecord:
         velocity_km_s=rng.uniform(-40.0, 40.0, size=(n, 3)).astype(np.float32),
         abs_mag=rng.uniform(-5.0, 15.0, size=n).astype(np.float32),
         colour_index=rng.integers(0, 65535, size=n, dtype=np.uint16),
-        type_flags=np.full(n, TYPE_STAR, dtype=np.uint8),
+        type_flags=np.full(n, pack_type(CLASS_STAR), dtype=np.uint8),
         catalog_id=np.arange(1000, 1000 + n, dtype=np.uint64),
     )
 

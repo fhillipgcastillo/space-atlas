@@ -1,7 +1,7 @@
 import type { Points } from 'three';
 import type { PickingPass } from '../render/picking.js';
 import { decodeFloat16, dequantizePosition, type DecodedTile } from '../tiles/format.js';
-import { describeType, hasRadialVelocity } from '../render/typeFlags.js';
+import { describeType, hasMeasuredMagnitude, hasRadialVelocity } from '../render/typeFlags.js';
 import type { HoverCard } from '../ui/hoverCard.js';
 
 export interface HoverSource {
@@ -73,7 +73,9 @@ export class HoverController {
         catalogId === undefined ? 'Star' : `Gaia DR3 ${catalogId}`,
         describeType(flags),
         `${distance.toFixed(2)} ${this.source.unit} from Earth`,
-        `absolute magnitude ${absMag.toFixed(2)}`,
+        hasMeasuredMagnitude(flags)
+          ? `absolute magnitude ${absMag.toFixed(2)}`
+          : `absolute magnitude ${absMag.toFixed(2)} (nominal)`,
         hasRadialVelocity(flags)
           ? `${speed.toFixed(1)} km/s`
           : `${speed.toFixed(1)} km/s (transverse only)`,

@@ -14,7 +14,12 @@ from universe_pipeline.frames import (
     icrs_to_galactic_velocity,
     parallax_to_distance_pc,
 )
-from universe_pipeline.records import FLAG_NO_RADIAL_VELOCITY, TYPE_STAR, ObjectRecord
+from universe_pipeline.records import (
+    CLASS_STAR,
+    FLAG_NO_RADIAL_VELOCITY,
+    ObjectRecord,
+    pack_type,
+)
 
 # BP-RP spans roughly -0.5 (hot blue) to 5.0 (cool red) for real stars.
 BP_RP_MIN = -0.5
@@ -138,7 +143,7 @@ def normalise_gaia(table: Mapping[str, np.ndarray], layer: LayerConfig) -> Objec
     colour = np.clip((bp_rp - BP_RP_MIN) / (BP_RP_MAX - BP_RP_MIN), 0.0, 1.0)
 
     n = int(keep.sum())
-    type_flags = np.full(n, TYPE_STAR, dtype=np.uint8)
+    type_flags = np.full(n, pack_type(CLASS_STAR), dtype=np.uint8)
     type_flags[missing_rv] |= FLAG_NO_RADIAL_VELOCITY
 
     return ObjectRecord(
