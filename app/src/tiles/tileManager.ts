@@ -14,16 +14,28 @@ export interface TileManagerOptions {
   gpuByteBudget: number;
 }
 
+const GPU_BYTE_BUDGET = 512 * 1024 * 1024;
+const MAX_POINTS_PER_TILE = 65536;
+
+/**
+ * Largest selection the byte budget can hold at once. Selecting more tiles than
+ * fit makes the LRU evict a tile that is still selected and immediately refetch
+ * it, so the loader thrashes and never settles.
+ */
+export const maxNodesForBudget = (budget: number, bytesPerPoint: number): number =>
+  Math.max(1, Math.floor(budget / (MAX_POINTS_PER_TILE * bytesPerPoint)));
+
 export const DEFAULT_OPTIONS: TileManagerOptions = {
   screenSpaceErrorThreshold: 160,
-  maxVisibleNodes: 384,
+  maxVisibleNodes: maxNodesForBudget(GPU_BYTE_BUDGET, 41),
   maxInFlight: 8,
-  gpuByteBudget: 512 * 1024 * 1024,
+  gpuByteBudget: GPU_BYTE_BUDGET,
 };
 
 // 10 bytes of GPU attributes, the CPU-side BufferAttribute copy Three keeps
 // until dispose, and the DecodedTile retained in tilesBySlot for hover.
 const BYTES_PER_POINT = 41;
+
 
 export class TileManager {
   readonly group = new Group();
