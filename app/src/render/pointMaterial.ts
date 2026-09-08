@@ -69,13 +69,37 @@ void main() {
 }
 `;
 
+// Tuned so the full 2M-point, 73-tile stream still leaves black sky between
+// stars; 4.0e4 was tuned against the 65k-point root tile alone.
+const DEFAULT_ALPHA_SCALE = 1.0e3;
+
+let alphaScale = DEFAULT_ALPHA_SCALE;
+// Materials handed out by createPointMaterial. tileMesh clones one of these per
+// tile, so changing the scale here only reaches tiles streamed in afterwards;
+// Viewer.setAlphaScale updates the live clones as well. Held weakly so the
+// registry cannot pin a material the caller has disposed.
+const baseMaterials = new Set<WeakRef<RawShaderMaterial>>();
+
+export function getAlphaScale(): number {
+  return alphaScale;
+}
+
+export function setAlphaScale(value: number): void {
+  alphaScale = value;
+  for (const ref of baseMaterials) {
+    const material = ref.deref();
+    if (material) material.uniforms['uAlphaScale']!.value = value;
+    else baseMaterials.delete(ref);
+  }
+}
+
 export function createPointMaterial(unitInParsecs: number): RawShaderMaterial {
   const ramp = new DataTexture(buildColourRamp(256), 256, 1, RGBAFormat, UnsignedByteType);
   ramp.minFilter = LinearFilter;
   ramp.magFilter = LinearFilter;
   ramp.needsUpdate = true;
 
-  return new RawShaderMaterial({
+  const material = new RawShaderMaterial({
     glslVersion: GLSL3,
     vertexShader: VERTEX,
     fragmentShader: FRAGMENT,
@@ -86,7 +110,7 @@ export function createPointMaterial(unitInParsecs: number): RawShaderMaterial {
       uSizeScale: { value: 500.0 },
       uMinSize: { value: 1.0 },
       uMaxSize: { value: 8.0 },
-      uAlphaScale: { value: 4.0e4 },
+      uAlphaScale: { value: alphaScale },
       uParsecsPerUnit: { value: unitInParsecs },
       uColourRamp: { value: ramp },
     },
@@ -95,4 +119,7 @@ export function createPointMaterial(unitInParsecs: number): RawShaderMaterial {
     depthWrite: false,
     blending: AdditiveBlending,
   });
+
+  baseMaterials.add(new WeakRef(material));
+  return material;
 }
