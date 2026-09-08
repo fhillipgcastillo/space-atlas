@@ -53,9 +53,16 @@ def _write_tiles(record: ObjectRecord, node: OctreeNode, out_dir: Path) -> None:
         _write_tiles(record, child, out_dir)
 
 
+def _clear_previous_bake(layer_dir: Path) -> None:
+    # A rebake with a different octree shape would otherwise strand unreferenced tiles.
+    for stale in [*layer_dir.glob("*.bin"), *layer_dir.glob("tileset.json")]:
+        stale.unlink()
+
+
 def build_layer(record: ObjectRecord, layer: LayerConfig, out_dir: Path) -> dict[str, Any]:
     layer_dir = out_dir / layer.key
     layer_dir.mkdir(parents=True, exist_ok=True)
+    _clear_previous_bake(layer_dir)
 
     root = build_octree(record.position_ly, layer.max_points_per_tile)
     _write_tiles(record, root, layer_dir)

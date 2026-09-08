@@ -79,3 +79,22 @@ def test_empty_record_produces_a_valid_empty_tileset(tmp_path: Path) -> None:
     tileset = build_layer(synthetic_record(0), L1_STELLAR_NEIGHBOURHOOD, tmp_path)
     assert tileset["pointCount"] == 0
     assert (tmp_path / "stellar-neighbourhood" / "r.bin").exists()
+
+
+def test_rebake_removes_tiles_from_a_previous_run(tmp_path: Path) -> None:
+    build_layer(synthetic_record(6_000), L1_STELLAR_NEIGHBOURHOOD, tmp_path)
+    layer_dir = tmp_path / "stellar-neighbourhood"
+    orphan = layer_dir / "r7777.bin"
+    orphan.write_bytes(b"stale")
+
+    tileset = build_layer(synthetic_record(200), L1_STELLAR_NEIGHBOURHOOD, tmp_path)
+
+    assert not orphan.exists()
+    referenced = set()
+    stack = [tileset["root"]]
+    while stack:
+        node = stack.pop()
+        referenced.add(f"{node['path']}.bin")
+        stack.extend(node["children"])
+    on_disk = {p.name for p in layer_dir.glob("*.bin")} - {"ids.bin"}
+    assert on_disk == referenced
