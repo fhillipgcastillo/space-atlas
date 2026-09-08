@@ -98,3 +98,27 @@ def test_rebake_removes_tiles_from_a_previous_run(tmp_path: Path) -> None:
         stack.extend(node["children"])
     on_disk = {p.name for p in layer_dir.glob("*.bin")} - {"ids.bin"}
     assert on_disk == referenced
+
+
+def test_names_are_written_in_local_id_order(tmp_path: Path) -> None:
+    record = synthetic_record(5)
+    names = [f"body {i}" for i in range(5)]
+
+    build_layer(record, L1_STELLAR_NEIGHBOURHOOD, tmp_path, names=names)
+
+    written = json.loads(
+        (tmp_path / "stellar-neighbourhood" / "names.json").read_text(encoding="utf-8")
+    )
+    assert written["3"] == "body 3"
+    assert len(written) == 5
+
+
+def test_no_names_file_when_none_are_supplied(tmp_path: Path) -> None:
+    build_layer(synthetic_record(5), L1_STELLAR_NEIGHBOURHOOD, tmp_path)
+    assert not (tmp_path / "stellar-neighbourhood" / "names.json").exists()
+
+
+def test_tileset_records_the_origin_and_identifier_prefix(tmp_path: Path) -> None:
+    tileset = build_layer(synthetic_record(3), L1_STELLAR_NEIGHBOURHOOD, tmp_path)
+    assert tileset["origin"] == L1_STELLAR_NEIGHBOURHOOD.origin
+    assert "idPrefix" in tileset

@@ -11,13 +11,11 @@ from pathlib import Path
 import numpy as np
 
 from universe_pipeline.build import build_layer
-from universe_pipeline.config import L1_STELLAR_NEIGHBOURHOOD, LayerConfig
+from universe_pipeline.config import L1_STELLAR_NEIGHBOURHOOD, LAYERS, LayerConfig
 from universe_pipeline.records import CLASS_STAR, ObjectRecord, pack_type
+from universe_pipeline.sources.cosmicflows import fetch_cosmicflows, normalise_cosmicflows
 from universe_pipeline.sources.gaia import fetch_gaia_chunk, normalise_gaia
-
-LAYERS: dict[str, LayerConfig] = {
-    L1_STELLAR_NEIGHBOURHOOD.key: L1_STELLAR_NEIGHBOURHOOD,
-}
+from universe_pipeline.sources.solar_system import build_solar_system
 
 # Gaia source_id encodes HEALPix level 12; chunking the level-8 index range
 # keeps every archive job under the row limit and makes the download resumable.
@@ -80,39 +78,54 @@ def _concat(records: list[ObjectRecord]) -> ObjectRecord:
     )
 
 
+def _build_one(key: str, args: argparse.Namespace) -> None:
+    layer = LAYERS[key]
+    names: list[str] | None = None
+    prefix = ""
+
+    if args.synthetic is not None:
+        record = _synthetic(args.synthetic, layer, seed=1)
+    elif key == "solar-system":
+        record, names = build_solar_system(layer)
+        prefix = "Body"
+    elif key == "local-universe":
+        record, names = normalise_cosmicflows(fetch_cosmicflows(args.cache), layer)
+        prefix = "PGC"
+    elif key == "stellar-neighbourhood":
+        record = _concat(fetch_layer_chunks(layer, args.chunks, args.cache, args.workers))
+        prefix = "Gaia DR3"
+    else:
+        raise SystemExit(f"no source wired for layer {key}")
+
+    print(f"{key}: {len(record)} objects", flush=True)
+    tileset = build_layer(record, layer, args.out, names=names, id_prefix=prefix)
+
+    tiles, stack = 0, [tileset["root"]]
+    while stack:
+        node = stack.pop()
+        tiles += 1
+        stack.extend(node["children"])
+    print(f"wrote {tiles} tiles to {args.out / key}", flush=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="universe-pipeline")
     parser.add_argument("--layer", default=L1_STELLAR_NEIGHBOURHOOD.key, choices=sorted(LAYERS))
+    parser.add_argument("--all", action="store_true", help="bake every registered layer")
     parser.add_argument("--out", type=Path, default=Path("public/data"))
     parser.add_argument("--cache", type=Path, default=Path("data/cache"))
     parser.add_argument(
         "--synthetic",
         type=int,
         metavar="COUNT",
-        help="skip Gaia and bake COUNT deterministic placeholder stars",
+        help="skip the real source and bake COUNT deterministic placeholder points",
     )
     parser.add_argument("--chunks", type=int, default=48, help="number of Gaia sky chunks")
     parser.add_argument("--workers", type=int, default=6, help="concurrent archive queries")
     args = parser.parse_args(argv)
 
-    layer = LAYERS[args.layer]
-
-    if args.synthetic is not None:
-        record = _synthetic(args.synthetic, layer, seed=1)
-        print(f"synthetic: {len(record)} placeholder stars")
-    else:
-        parts = fetch_layer_chunks(layer, args.chunks, args.cache, args.workers)
-        record = _concat(parts)
-        print(f"gaia: {len(record)} sources total")
-
-    tileset = build_layer(record, layer, args.out)
-    tiles = 0
-    stack = [tileset["root"]]
-    while stack:
-        node = stack.pop()
-        tiles += 1
-        stack.extend(node["children"])
-    print(f"wrote {tiles} tiles to {args.out / layer.key}")
+    for key in sorted(LAYERS) if args.all else [args.layer]:
+        _build_one(key, args)
     return 0
 
 

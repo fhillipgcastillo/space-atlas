@@ -55,11 +55,21 @@ def _write_tiles(record: ObjectRecord, node: OctreeNode, out_dir: Path) -> None:
 
 def _clear_previous_bake(layer_dir: Path) -> None:
     # A rebake with a different octree shape would otherwise strand unreferenced tiles.
-    for stale in [*layer_dir.glob("*.bin"), *layer_dir.glob("tileset.json")]:
+    for stale in [
+        *layer_dir.glob("*.bin"),
+        *layer_dir.glob("tileset.json"),
+        *layer_dir.glob("names.json"),
+    ]:
         stale.unlink()
 
 
-def build_layer(record: ObjectRecord, layer: LayerConfig, out_dir: Path) -> dict[str, Any]:
+def build_layer(
+    record: ObjectRecord,
+    layer: LayerConfig,
+    out_dir: Path,
+    names: list[str] | None = None,
+    id_prefix: str = "",
+) -> dict[str, Any]:
     layer_dir = out_dir / layer.key
     layer_dir.mkdir(parents=True, exist_ok=True)
     _clear_previous_bake(layer_dir)
@@ -69,13 +79,19 @@ def build_layer(record: ObjectRecord, layer: LayerConfig, out_dir: Path) -> dict
 
     record.catalog_id.astype("<u8").tofile(layer_dir / "ids.bin")
 
+    if names is not None:
+        (layer_dir / "names.json").write_text(
+            json.dumps({str(i): name for i, name in enumerate(names)}), encoding="utf-8"
+        )
+
     tileset: dict[str, Any] = {
         "formatVersion": 1,
         "layer": layer.key,
         "unit": layer.unit,
         "unitInMetres": layer.unit_in_metres,
         "frame": "galactic",
-        "origin": "Sol",
+        "origin": layer.origin,
+        "idPrefix": id_prefix,
         "pointCount": len(record),
         "root": _node_to_json(root),
     }

@@ -4,7 +4,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from universe_pipeline.cli import HEALPIX8_TOTAL, fetch_layer_chunks
+from universe_pipeline.cli import HEALPIX8_TOTAL, _synthetic, fetch_layer_chunks
+from universe_pipeline.config import L0_SOLAR_SYSTEM, L3_LOCAL_UNIVERSE, LayerConfig
 from universe_pipeline.config import L1_STELLAR_NEIGHBOURHOOD as L1
 
 
@@ -82,3 +83,17 @@ def test_single_worker_still_works() -> None:
         fetch=lambda _l, lo, _h, _c: fake_table(float(lo + 1)),
     )
     assert len(parts) == 3
+
+
+@pytest.mark.parametrize("layer", [L0_SOLAR_SYSTEM, L1, L3_LOCAL_UNIVERSE])
+def test_synthetic_points_stay_inside_the_layer_shell(layer: LayerConfig) -> None:
+    record = _synthetic(500, layer, seed=1)
+
+    assert len(record) == 500
+    assert np.all(np.isfinite(record.position_ly))
+    assert np.all(np.isfinite(record.velocity_km_s))
+    assert np.all(np.isfinite(record.abs_mag))
+
+    radius = np.linalg.norm(record.position_ly, axis=1)
+    assert np.all(radius >= layer.min_radius)
+    assert np.all(radius <= layer.max_radius)
