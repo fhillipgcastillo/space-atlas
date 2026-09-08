@@ -70,6 +70,12 @@ describe.each([
     }
   });
 
+  it('rejects a tile with an unknown attribute mask', () => {
+    const corrupted = buffer.slice(0);
+    new DataView(corrupted).setUint32(12, 0x7f, true);
+    expect(() => decodeTile(corrupted)).toThrow(/attribute mask/i);
+  });
+
   it('rejects a tile with the wrong magic', () => {
     const corrupted = buffer.slice(0);
     new Uint8Array(corrupted).set([88, 88, 88, 88], 0);

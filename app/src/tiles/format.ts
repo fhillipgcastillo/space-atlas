@@ -2,6 +2,7 @@
 
 const MAGIC = 0x31544d55; // "UMT1" read as little-endian uint32
 const VERSION = 1;
+const ATTRIBUTE_MASK_V1 = 0x3f;
 const HEADER_BYTES = 64;
 const QUANT_MAX = 65535;
 
@@ -32,6 +33,10 @@ export function decodeTile(buffer: ArrayBuffer): DecodedTile {
     throw new Error(`unsupported tile format version ${version}`);
   }
   const pointCount = view.getUint32(8, true);
+  const attributeMask = view.getUint32(12, true);
+  if (attributeMask !== ATTRIBUTE_MASK_V1) {
+    throw new Error(`unsupported attribute mask 0x${attributeMask.toString(16)}`);
+  }
 
   const bboxMin = new Float64Array(3);
   const bboxMax = new Float64Array(3);

@@ -61,7 +61,8 @@ def encode_tile(points: TilePoints, bbox_min: np.ndarray, bbox_max: np.ndarray) 
     out += np.array([TILE_VERSION, n, ATTRIBUTE_MASK_V1], dtype="<u4").tobytes()
     out += lo.astype("<f8").tobytes()
     out += hi.astype("<f8").tobytes()
-    assert len(out) == HEADER_BYTES, f"header is {len(out)} bytes, expected {HEADER_BYTES}"
+    if len(out) != HEADER_BYTES:
+        raise ValueError(f"header is {len(out)} bytes, expected {HEADER_BYTES}")
 
     for block in (
         quantize_positions(points.position, lo, hi).astype("<u2"),
@@ -86,9 +87,11 @@ def _take(blob: bytes, offset: int, dtype: str, count: int) -> tuple[np.ndarray,
 def decode_tile(blob: bytes) -> tuple[TilePoints, np.ndarray, np.ndarray]:
     if blob[0:4] != TILE_MAGIC:
         raise ValueError(f"bad tile magic: {blob[0:4]!r}")
-    version, n, _mask = np.frombuffer(blob, dtype="<u4", count=3, offset=4)
+    version, n, mask = np.frombuffer(blob, dtype="<u4", count=3, offset=4)
     if int(version) != TILE_VERSION:
         raise ValueError(f"unsupported tile format version {int(version)}")
+    if int(mask) != ATTRIBUTE_MASK_V1:
+        raise ValueError(f"unsupported attribute mask 0x{int(mask):x}")
     n = int(n)
 
     lo = np.frombuffer(blob, dtype="<f8", count=3, offset=16).copy()

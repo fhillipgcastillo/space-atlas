@@ -12,6 +12,8 @@ TYPE_GALAXY = 1 << 2
 TYPE_BLACK_HOLE = 1 << 3
 TYPE_NEBULA = 1 << 4
 TYPE_CLUSTER = 1 << 5
+# Velocity's radial component is unknown, stored as zero. Not a measured zero.
+FLAG_NO_RADIAL_VELOCITY = 1 << 6
 
 
 @dataclass

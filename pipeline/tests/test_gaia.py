@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from universe_pipeline.config import L1_STELLAR_NEIGHBOURHOOD
-from universe_pipeline.records import FLAG_MODELED, TYPE_STAR
+from universe_pipeline.records import FLAG_MODELED, FLAG_NO_RADIAL_VELOCITY, TYPE_STAR
 from universe_pipeline.sources.gaia import (
     BP_RP_NEUTRAL,
     _column_to_array,
@@ -127,3 +127,27 @@ def test_adql_applies_the_configured_limits() -> None:
     assert "phot_g_mean_mag < 16.0" in query
     assert "parallax_over_error > 5.0" in query
     assert "source_id BETWEEN" in query
+
+
+def test_unknown_radial_velocity_is_flagged_but_a_measured_zero_is_not() -> None:
+    # Source 1 measures 0.0 km/s; source 2 has none at all. Both store 0.0.
+    record = normalise_gaia(sample_table(), L1_STELLAR_NEIGHBOURHOOD)
+
+    assert not (record.type_flags[0] & FLAG_NO_RADIAL_VELOCITY)
+    assert record.type_flags[1] & FLAG_NO_RADIAL_VELOCITY
+
+
+def test_flagging_missing_velocity_preserves_the_object_type() -> None:
+    record = normalise_gaia(sample_table(), L1_STELLAR_NEIGHBOURHOOD)
+
+    assert np.all(record.type_flags & TYPE_STAR)
+    assert not np.any(record.type_flags & FLAG_MODELED)
+
+
+def test_drops_a_bailer_jones_distance_below_the_parallax_quality_cut() -> None:
+    # Source 3 has a usable r_med_geo but parallax_over_error of 1.0. The
+    # estimate is derived from that same parallax, so it reports the prior.
+    table = sample_table(r_med_geo=np.array([100.0, 1000.0, 500.0]))
+    record = normalise_gaia(table, L1_STELLAR_NEIGHBOURHOOD)
+
+    assert list(record.catalog_id) == [1, 2]

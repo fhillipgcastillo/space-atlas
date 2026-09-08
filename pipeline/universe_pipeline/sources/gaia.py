@@ -14,7 +14,7 @@ from universe_pipeline.frames import (
     icrs_to_galactic_velocity,
     parallax_to_distance_pc,
 )
-from universe_pipeline.records import TYPE_STAR, ObjectRecord
+from universe_pipeline.records import FLAG_NO_RADIAL_VELOCITY, TYPE_STAR, ObjectRecord
 
 # BP-RP spans roughly -0.5 (hot blue) to 5.0 (cool red) for real stars.
 BP_RP_MIN = -0.5
@@ -87,12 +87,15 @@ def normalise_gaia(table: Mapping[str, np.ndarray], layer: LayerConfig) -> Objec
         parallax_to_distance_pc(np.where(positive_parallax, parallax, 1.0)),
         np.nan,
     )
-    usable_inversion = np.isfinite(inverted) & (parallax_snr > layer.min_parallax_over_error)
+    # The SNR cut gates both branches: a Bailer-Jones distance is derived from
+    # the same parallax under a prior, so below the cut it reports the prior.
+    good_parallax = parallax_snr > layer.min_parallax_over_error
     distance_pc = np.where(
         np.isfinite(bailer_jones),
         bailer_jones,
-        np.where(usable_inversion, inverted, np.nan),
+        np.where(np.isfinite(inverted), inverted, np.nan),
     )
+    distance_pc = np.where(good_parallax, distance_pc, np.nan)
 
     keep = np.isfinite(distance_pc) & (distance_pc > 0.0)
     distance_ly = distance_pc * LY_PER_PC
@@ -105,7 +108,9 @@ def normalise_gaia(table: Mapping[str, np.ndarray], layer: LayerConfig) -> Objec
 
     position_ly = icrs_to_galactic_cartesian(ra, dec, distance_pc) * LY_PER_PC
 
-    rv = np.nan_to_num(_column(table, "radial_velocity")[keep], nan=0.0)
+    raw_rv = _column(table, "radial_velocity")[keep]
+    missing_rv = ~np.isfinite(raw_rv)
+    rv = np.nan_to_num(raw_rv, nan=0.0)
     velocity = icrs_to_galactic_velocity(
         ra,
         dec,
@@ -122,11 +127,14 @@ def normalise_gaia(table: Mapping[str, np.ndarray], layer: LayerConfig) -> Objec
     colour = np.clip((bp_rp - BP_RP_MIN) / (BP_RP_MAX - BP_RP_MIN), 0.0, 1.0)
 
     n = int(keep.sum())
+    type_flags = np.full(n, TYPE_STAR, dtype=np.uint8)
+    type_flags[missing_rv] |= FLAG_NO_RADIAL_VELOCITY
+
     return ObjectRecord(
         position_ly=position_ly,
         velocity_km_s=velocity.astype(np.float32),
         abs_mag=abs_mag.astype(np.float32),
         colour_index=np.rint(colour * 65535.0).astype(np.uint16),
-        type_flags=np.full(n, TYPE_STAR, dtype=np.uint8),
+        type_flags=type_flags,
         catalog_id=np.asarray(table["source_id"], dtype=np.uint64)[keep],
     )

@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from universe_pipeline.tileformat import (
+    ATTRIBUTE_MASK_V1,
     HEADER_BYTES,
     TILE_MAGIC,
     TILE_VERSION,
@@ -89,4 +90,13 @@ def test_rejects_wrong_magic() -> None:
     blob[0:4] = b"XXXX"
 
     with pytest.raises(ValueError, match="magic"):
+        decode_tile(bytes(blob))
+
+
+def test_rejects_an_unknown_attribute_mask() -> None:
+    pts = make_points(3, np.random.default_rng(5))
+    blob = bytearray(encode_tile(pts, pts.position.min(axis=0), pts.position.max(axis=0)))
+    blob[12:16] = np.array([ATTRIBUTE_MASK_V1 | 0x40], dtype="<u4").tobytes()
+
+    with pytest.raises(ValueError, match="attribute mask"):
         decode_tile(bytes(blob))
