@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "bake:fixture": ".venv/Scripts/python -m universe_pipeline.cli --synthetic 2000000"
   },
   "dependencies": {
     "three": "^0.180.0"

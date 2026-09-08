@@ -20,6 +20,7 @@ declare global {
       frameTimes: number[];
       picking: PickingPass;
       hover: HoverController;
+      identifiersReady: Promise<void>;
     };
   }
 }
@@ -44,7 +45,7 @@ async function boot(): Promise<void> {
   // Far enough out that the root subsample reads as a field.
   viewer.camera.position.set(0, 0, 3000);
 
-  void fetchIdentifiers().then(
+  const identifiersReady = fetchIdentifiers().then(
     (ids) => {
       identifiers = ids;
     },
@@ -84,7 +85,15 @@ async function boot(): Promise<void> {
   });
 
   viewer.start();
-  window.__universeMap = { viewer, manager, tileset, frameTimes, picking, hover };
+  window.__universeMap = {
+    viewer,
+    manager,
+    tileset,
+    frameTimes,
+    picking,
+    hover,
+    identifiersReady,
+  };
   console.info(`loaded ${tileset.layer}: ${tileset.pointCount} points total`);
 }
 

@@ -1,7 +1,7 @@
 ---
 name: builder
 description: Implements one task from an implementation plan. Tests are the only verification oracle. Cannot spawn subagents, invoke skills, or reach MCP servers.
-tools: Read, Write, Edit, Bash, PowerShell, Glob, Grep
+tools: Read, Write, Edit, Bash, PowerShell, Glob, Grep, Skill
 model: opus
 ---
 
@@ -16,9 +16,15 @@ Your task's tests are the verification oracle. "Done" is exactly this list:
 - `ruff check` and the task's `pytest` file pass where the task touches Python
 - any measurement the task asked for produced real numbers
 
-Nothing else counts as verification and nothing else is required. Do not
-construct additional review or validation rounds; the tool set available to you
-deliberately excludes the means to do so.
+Nothing else counts as verification and nothing else is required.
+
+Do not invoke any `superpowers:*` skill. Those encode a process — brainstorming,
+plan execution, review rounds, verification ceremonies — that the orchestrator
+already owns for this project, and running them here duplicates work and inflates
+runtime. Ordinary project skills are fine when they genuinely help.
+
+Do not construct review or validation rounds of your own. The `Agent` tool is
+deliberately absent from your tool list so this cannot happen by accident.
 
 ## Scope
 
