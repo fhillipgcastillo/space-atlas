@@ -253,6 +253,74 @@ galactic potential and is deliberately deferred.
 - **Filters and legend** — toggle object classes; explain what colors mean; make
   the measured/modeled distinction switchable and obvious.
 
+### 6.1 Maximum render distance
+
+User-facing cutoffs setting the furthest distance drawn. Anything beyond is not
+rendered. Two independent modes, each with its own value, switchable in the UI.
+
+**From Earth** — a radius shell centred on the layer origin. This is a *map
+filter*: the visible set is a property of the map, not of where the viewer
+happens to be. Flying around never changes what is included.
+
+**From camera** — a draw distance centred on the viewer. It travels with the
+camera, so what is visible changes as you move.
+
+**Both may be active simultaneously.** When both are on, a point is drawn only
+if it satisfies both — the visible set is the intersection. Each is an
+independent constraint rather than one overriding the other, so "within 500 ly
+of Earth" and "within 50 ly of me" compose into exactly what that phrase
+implies. The UI selects which mode is being *edited*; it does not force one off.
+
+#### Hard cutoff — a deliberate tradeoff, not an oversight
+
+The boundary is a hard binary. A point is drawn at full brightness or not drawn
+at all. **No fog, no fade band, no blur, no alpha ramp toward the limit.**
+
+This will cause visible popping as points cross the boundary, most obviously in
+camera mode while flying. **That popping is accepted.** It is the chosen
+behaviour, not a defect awaiting a fix.
+
+*Anyone tempted to soften this should read this paragraph first.* The cutoff is
+a control the viewer sets deliberately and expects to be exact: a fade makes the
+actual limit unknowable, turns a crisp answer to "what is within 500 ly" into a
+gradient, and quietly reintroduces the fill-rate cost the cutoff exists to
+remove. Changing this needs a decision recorded here, not a patch.
+
+#### Two tiers, both modes
+
+**Tier 1 — shader cutoff.** One uniform per mode; points beyond are discarded in
+the vertex shader. Applies instantly, no reload, no refetch.
+
+**Tier 2 — traversal culling.** Octree traversal skips nodes whose bounding box
+lies entirely beyond the cutoff, so distant tiles are never fetched at all. This
+saves bandwidth and GPU memory rather than merely hiding pixels.
+
+Both tiers are needed. Tier 1 alone still pays to load and store everything;
+tier 2 alone is granular only to a whole node.
+
+#### The two modes are not equally cheap
+
+| | Camera mode | Earth mode |
+|---|---|---|
+| Shader cost | Effectively free — the vertex shader already computes camera distance for apparent-magnitude sizing | A second distance, from the layer origin, is not otherwise computed |
+| Traversal cost | Effectively free — `distanceToBox` in `app/src/tiles/traversal.ts` already measures node boxes against the camera for screen-space error, so the cutoff is one comparison on an existing value | Needs origin-to-node-box distance. Static per layer, so compute once per node at load, never per frame |
+| Cache behaviour | **Churns.** Flying forward continuously evicts tiles behind and fetches tiles ahead | **Stable.** The working set does not change as the camera moves |
+
+Camera mode is cheaper in the shader and free in traversal, but its cache churn
+is the more expensive property in practice — it converts camera motion into
+sustained network and GPU-upload traffic. Earth mode costs one precomputed
+distance per node and then holds a fixed working set.
+
+**Earth mode is therefore the default.**
+
+#### Interaction with the layer ladder
+
+Cutoffs are expressed in the **active layer's units**. A cutoff larger than the
+current layer's own range does not constrain that layer at all — it constrains
+the layers outside it. Setting 50,000 ly while in the stellar neighbourhood
+(range 5,000 ly) leaves that layer whole and trims the Milky Way layer instead.
+The UI must make the active unit explicit, or the number is meaningless.
+
 ---
 
 ## 7. Verification
@@ -302,7 +370,7 @@ retrofitting a field into a baked format means regenerating every tile.
 |---|---|---|
 | 1 | Tile format v1 frozen; pipeline for L1 only (Gaia); renderer with streaming, LOD, free-fly camera, hover picking, Earth anchor | **Yes** — fly through the real stellar neighborhood |
 | 2 | Remaining four layers; crossfade state machine; modeled Milky Way population; scale to 10M+ | **Yes** — full zoom-out, Earth to cosmic web |
-| 3 | Auto-labels with decluttering; search and fly-to; scale HUD; filters and legend | **Yes** — the map becomes readable and explorable |
+| 3 | Auto-labels with decluttering; search and fly-to; scale HUD; filters and legend; maximum render distance (both modes, both tiers, per 6.1) | **Yes** — the map becomes readable and explorable |
 | 4 | Time playback | **Yes** — watch the sky drift |
 | 5 *(deferred)* | Deep-future extrapolation with galactic potential integration | **Yes** |
 
