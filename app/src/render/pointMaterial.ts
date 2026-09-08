@@ -51,6 +51,7 @@ const FRAGMENT = /* glsl */ `
 precision highp float;
 
 uniform sampler2D uColourRamp;
+uniform float uLayerOpacity;
 
 in float vColourIndex;
 in float vAlpha;
@@ -65,7 +66,7 @@ void main() {
   float falloff = exp(-radiusSq * 12.0);
   vec3 tint = texture(uColourRamp, vec2(vColourIndex, 0.5)).rgb;
 
-  fragColour = vec4(tint * falloff * vAlpha, 1.0);
+  fragColour = vec4(tint * falloff * vAlpha * uLayerOpacity, 1.0);
 }
 `;
 
@@ -112,6 +113,7 @@ export function createPointMaterial(unitInParsecs: number): RawShaderMaterial {
       uMaxSize: { value: 8.0 },
       uAlphaScale: { value: alphaScale },
       uParsecsPerUnit: { value: unitInParsecs },
+      uLayerOpacity: { value: 1 },
       uColourRamp: { value: ramp },
     },
     transparent: true,
