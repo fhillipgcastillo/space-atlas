@@ -1,14 +1,4 @@
-"""ICRS to Galactic Cartesian transforms.
-
-astropy owns the actual rotation. This module fixes the units, the axis order
-and the Gaia column conventions, and pipeline/tests/test_frames.py pins that
-usage down.
-
-Galactic Cartesian axes, Sun at the origin:
-    +X toward the galactic centre (l = 0, b = 0)
-    +Y toward l = 90 degrees
-    +Z toward the north galactic pole
-"""
+"""ICRS to Galactic Cartesian transforms."""
 
 from __future__ import annotations
 
@@ -22,8 +12,7 @@ PC_PER_LY = 1.0 / LY_PER_PC
 
 
 def parallax_to_distance_pc(parallax_mas: np.ndarray) -> np.ndarray:
-    """Naive parallax inversion. Biased at low signal-to-noise; callers must
-    apply a parallax_over_error cut before relying on this."""
+    """Naive parallax inversion; callers must apply a parallax_over_error cut first."""
     return 1000.0 / np.asarray(parallax_mas, dtype=np.float64)
 
 
@@ -77,11 +66,7 @@ def icrs_to_galactic_velocity(
 ) -> np.ndarray:
     """Space velocity as an (N, 3) array of km/s in the Galactic frame.
 
-    Gaia's `pmra` already carries the cos(dec) factor, so it maps to astropy's
-    `pm_ra_cosdec`. Using `pm_ra` instead tilts every velocity toward the poles.
-
-    The result stays heliocentric: no correction for the Sun's own motion is
-    applied, which is what a Sun-origin layer wants.
+    Heliocentric: no correction for the Sun's own motion is applied.
     """
     ra_deg = np.asarray(ra_deg, dtype=np.float64)
     if ra_deg.size == 0:

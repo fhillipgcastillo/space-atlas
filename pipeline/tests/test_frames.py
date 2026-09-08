@@ -1,13 +1,4 @@
-"""Golden tests for coordinate transforms.
-
-Reference values are exactly-defined quantities, not measured star distances:
-
-- The IAU galactic pole and centre directions are definitional (Hipparcos/IAU
-  1958 convention, as implemented by astropy's Galactic frame).
-- Parallax inversion is arithmetic: d[pc] == 1000 / parallax[mas].
-- Sagittarius A* sits within a twentieth of a degree of the galactic origin;
-  ICRS 266.41684, -29.00781 -> l = 359.944, b = -0.046.
-"""
+"""Golden tests for coordinate transforms; reference values are IAU-definitional."""
 
 import numpy as np
 import pytest
@@ -50,7 +41,6 @@ def test_north_galactic_pole_maps_to_latitude_90() -> None:
 def test_galactic_centre_maps_to_the_origin() -> None:
     ra, dec = GALACTIC_CENTRE_ICRS
     lon, lat = icrs_to_galactic_lb(np.array([ra]), np.array([dec]))
-    # Longitude wraps; fold to [-180, 180) before comparing to zero.
     folded = (lon[0] + 180.0) % 360.0 - 180.0
     assert abs(folded) < ARCSEC_DEG
     assert abs(lat[0]) < ARCSEC_DEG

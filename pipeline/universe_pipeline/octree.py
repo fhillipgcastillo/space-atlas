@@ -1,10 +1,4 @@
-"""Additive-refinement octree, following the Potree approach.
-
-Each node keeps a random subsample of the points beneath it and passes the
-remainder to its children. Drawing a node means drawing its own points;
-descending adds detail on top rather than replacing it. Every input point is
-owned by exactly one node.
-"""
+"""Additive-refinement octree, following the Potree approach."""
 
 from __future__ import annotations
 
@@ -13,8 +7,6 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-# A box cannot be split forever. Identical points would otherwise recurse until
-# the stack gives out, so depth is capped and the deepest node keeps the rest.
 MAX_DEPTH = 24
 
 
@@ -41,21 +33,7 @@ def iter_nodes(root: OctreeNode) -> Iterator[OctreeNode]:
 def _geometric_error(
     bbox_min: np.ndarray, bbox_max: np.ndarray, max_points_per_node: int
 ) -> float:
-    """Approximate spacing between the points a node draws.
-
-    A node holding k points spread across a box of diagonal D has mean spacing
-    of roughly D / k^(1/3). That is the distance a viewer would need to resolve
-    before the node stops being a good enough stand-in for its children.
-
-    k is the *budget*, not the node's actual point count, for every node
-    including leaves. The traversal relies on error decreasing strictly from
-    parent to child, and a node's own count breaks that: a leaf holding a
-    single point would report its whole diagonal, far more than the parent
-    that spent its full budget on the same region. Tying the error to the box
-    alone makes it exactly halve at each level. A sparse leaf is therefore
-    reported as finer than it truly is, which only ever refines less - and a
-    leaf has nothing left to refine into.
-    """
+    """Approximate spacing between the points a node draws, from the budget, not the count."""
     diagonal = float(np.linalg.norm(bbox_max - bbox_min))
     return diagonal / max(max_points_per_node, 1) ** (1.0 / 3.0)
 
@@ -91,7 +69,6 @@ def _build(
             total_points=total,
         )
 
-    # Keep a random subsample here; everything else descends.
     shuffled = rng.permutation(indices)
     kept = shuffled[:max_points_per_node]
     remaining = shuffled[max_points_per_node:]

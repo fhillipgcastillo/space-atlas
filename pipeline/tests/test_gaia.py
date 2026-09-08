@@ -31,16 +31,12 @@ def sample_table(**overrides: np.ndarray) -> dict[str, np.ndarray]:
 
 def test_drops_sources_failing_the_parallax_quality_cut() -> None:
     record = normalise_gaia(sample_table(), L1_STELLAR_NEIGHBOURHOOD)
-    # The third source has parallax_over_error = 1.0 and no Bailer-Jones
-    # distance, so it must be dropped rather than guessed.
     assert len(record) == 2
     assert list(record.catalog_id) == [1, 2]
 
 
 def test_prefers_bailer_jones_distance_over_parallax_inversion() -> None:
-    # The first source has parallax 10 mas, so naive inversion would give
-    # 100 pc. Bailer-Jones says 250 pc. The two disagree deliberately, so the
-    # resulting distance proves which source was actually used.
+    # 250 pc disagrees with the 100 pc naive inversion on purpose.
     table = sample_table(r_med_geo=np.array([250.0, 1000.0, np.nan]))
     record = normalise_gaia(table, L1_STELLAR_NEIGHBOURHOOD)
     distance_ly = float(np.linalg.norm(record.position_ly[0]))
@@ -81,10 +77,7 @@ def test_absolute_magnitude_uses_the_distance_modulus() -> None:
 
 
 def test_missing_colour_falls_back_to_the_neutral_index() -> None:
-    # Source 2 clears the quality cuts, so a NaN bp_rp there actually reaches
-    # the colour code. Source 3 does not - it is dropped by the parallax cut
-    # first, which is why the obvious version of this test proves nothing.
-    # A missing colour must behave exactly as if the neutral value were stated.
+    # Source 2 clears the quality cuts; source 3 is dropped before the colour code.
     missing = normalise_gaia(
         sample_table(bp_rp=np.array([0.5, np.nan, 1.0])), L1_STELLAR_NEIGHBOURHOOD
     )
@@ -93,14 +86,10 @@ def test_missing_colour_falls_back_to_the_neutral_index() -> None:
     )
 
     assert int(missing.colour_index[1]) == int(explicit.colour_index[1])
-    # Zero is what an unhandled NaN would collapse to, so it must not be zero.
     assert int(missing.colour_index[1]) > 0
 
 
 def test_column_to_array_accepts_a_plain_unmasked_column() -> None:
-    # astropy returns a plain Column, which has no .filled at all, whenever a
-    # column happens to have no gaps - and which columns those are varies with
-    # whatever each chunk returns.
     from astropy.table import Column
 
     result = _column_to_array(Column([1.0, 2.0, 3.0], name="parallax"))
@@ -121,11 +110,9 @@ def test_column_to_array_turns_masked_float_gaps_into_nan() -> None:
 
 
 def test_column_to_array_preserves_large_source_ids_exactly() -> None:
-    # Gaia source_id runs to about 4.3e18, far beyond the 2**53 where float64
-    # stops representing integers exactly. Widening an integer column to float
-    # to carry NaN would silently corrupt identifiers.
     from astropy.table import MaskedColumn
 
+    # 4.3e18 is far beyond 2**53, where float64 stops holding integers exactly.
     big = 4295806720000000001
     result = _column_to_array(
         MaskedColumn([big, big + 1], mask=[False, False], dtype=np.uint64, name="source_id")

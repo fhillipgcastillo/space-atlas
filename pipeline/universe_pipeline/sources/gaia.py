@@ -1,9 +1,4 @@
-"""Gaia DR3 to ObjectRecord.
-
-normalise_gaia is pure and operates on in-memory arrays, so the whole
-transformation path is testable offline. fetch_gaia_chunk is the only function
-here that touches the network, and it is deliberately trivial.
-"""
+"""Gaia DR3 to ObjectRecord."""
 
 from __future__ import annotations
 
@@ -28,26 +23,8 @@ BP_RP_NEUTRAL = 0.8
 
 
 def build_gaia_adql(layer: LayerConfig, healpix_lo: int, healpix_hi: int) -> str:
-    """One chunk of the layer, bounded by HEALPix level-8 source_id range.
-
-    Gaia source_id encodes HEALPix level 12 in its high bits, so a source_id
-    range is a sky region. Chunking this way keeps each job under the archive's
-    row limit and makes the download resumable.
-
-    The server-side cuts and the client-side distance preference answer two
-    different questions, and the overlap is deliberate rather than redundant.
-    These cuts decide *which stars we include at all*: they bound the download,
-    set the density via the magnitude limit, and exclude parallaxes too noisy
-    to trust. normalise_gaia then decides *how accurately we place the ones we
-    kept*, preferring the Bailer-Jones estimate over parallax inversion.
-
-    The consequence is that a star with a usable Bailer-Jones distance but a
-    weak parallax never reaches normalise_gaia. That is intended: the
-    Bailer-Jones estimate is itself derived from the parallax under a prior, so
-    below the quality cut it is dominated by the prior rather than by the
-    measurement, and admitting those stars would add invented positions rather
-    than measured ones.
-    """
+    """One chunk of the layer, bounded by HEALPix level-8 source_id range."""
+    # Gaia source_id encodes HEALPix level 12 in bits 59 and up.
     shift = 2 ** (59 - 2 * 8)
     return f"""
 SELECT g.source_id, g.ra, g.dec, g.parallax, g.parallax_over_error,
@@ -82,24 +59,12 @@ def fetch_gaia_chunk(
 
 
 def _column_to_array(column: object) -> np.ndarray:
-    """One astropy table column to a plain numpy array, gaps as NaN.
-
-    Calling .filled(np.nan) directly does not work. astropy returns a plain
-    Column, which has no .filled at all, for any column that happens to have no
-    missing values - and which columns those are depends on the data that came
-    back, so it varies chunk to chunk. Integer columns cannot represent NaN
-    even when masked, and source_id is a uint64 whose values must survive
-    exactly.
-    """
+    """One astropy table column to a plain numpy array, gaps as NaN."""
     data = np.asarray(column)
     mask = getattr(column, "mask", None)
     if mask is None or not np.any(mask):
         return data
     if not np.issubdtype(data.dtype, np.floating):
-        # An integer column with gaps has no in-band way to say "missing".
-        # normalise_gaia only ever reads integer columns it has already
-        # filtered, so leaving the underlying values is correct here; widening
-        # to float would corrupt 64-bit identifiers.
         return data
     filled = data.astype(np.float64, copy=True)
     filled[mask] = np.nan
@@ -116,8 +81,6 @@ def normalise_gaia(table: Mapping[str, np.ndarray], layer: LayerConfig) -> Objec
     parallax_snr = _column(table, "parallax_over_error")
     bailer_jones = _column(table, "r_med_geo")
 
-    # Bailer-Jones geometric distance where available; naive inversion only
-    # above the quality cut. Anything with neither is dropped, never guessed.
     positive_parallax = parallax > 0.0
     inverted = np.where(
         positive_parallax,
@@ -142,8 +105,6 @@ def normalise_gaia(table: Mapping[str, np.ndarray], layer: LayerConfig) -> Objec
 
     position_ly = icrs_to_galactic_cartesian(ra, dec, distance_pc) * LY_PER_PC
 
-    # Missing radial velocity means unknown, not stationary; zero is the honest
-    # placeholder and the flag carried alongside says the star has no RV.
     rv = np.nan_to_num(_column(table, "radial_velocity")[keep], nan=0.0)
     velocity = icrs_to_galactic_velocity(
         ra,

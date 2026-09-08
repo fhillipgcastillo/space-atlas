@@ -1,8 +1,4 @@
-/**
- * Tile format v1 decoder. See docs/tile-format.md — this file is a contract.
- * The Python side is pipeline/universe_pipeline/tileformat.py; the two are held
- * in agreement by app/src/tiles/format.test.ts.
- */
+/** Tile format v1 decoder. See docs/tile-format.md — this file is a contract. */
 
 const MAGIC = 0x31544d55; // "UMT1" read as little-endian uint32
 const VERSION = 1;
@@ -15,7 +11,7 @@ export interface DecodedTile {
   bboxMax: Float64Array;
   /** uint16 fractions of the bounding box; interleaved xyz. */
   positionQuantized: Uint16Array;
-  /** Raw float16 bits, interleaved xyz. Uploaded to the GPU as HALF_FLOAT. */
+  /** Raw float16 bits, interleaved xyz. */
   velocity: Uint16Array;
   colorIndex: Uint16Array;
   /** Raw float16 bits. */
@@ -50,7 +46,6 @@ export function decodeTile(buffer: ArrayBuffer): DecodedTile {
     len: number,
     bytesPer: number,
   ): T => {
-    // Typed array views need their own alignment; copy when the offset is not aligned.
     const byteLength = len * bytesPer;
     const slice = buffer.slice(offset, offset + byteLength);
     const arr = make(slice, 0, len);

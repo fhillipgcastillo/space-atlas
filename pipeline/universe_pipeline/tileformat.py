@@ -38,7 +38,6 @@ def quantize_positions(
 ) -> np.ndarray:
     """Map positions onto the tile bounding box as uint16 fractions."""
     extent = bbox_max - bbox_min
-    # A degenerate axis has no range to quantize across; store zero.
     safe = np.where(extent > 0.0, extent, 1.0)
     frac = (position - bbox_min) / safe
     frac = np.where(extent > 0.0, frac, 0.0)

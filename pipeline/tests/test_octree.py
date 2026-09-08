@@ -103,8 +103,6 @@ def test_build_is_deterministic_for_a_fixed_seed() -> None:
 
 
 def test_identical_points_do_not_recurse_forever() -> None:
-    # A degenerate box cannot be subdivided; the builder must stop rather than
-    # split a zero-width box until the stack blows.
     positions = np.zeros((5_000, 3))
     root = build_octree(positions, max_points_per_node=64)
 

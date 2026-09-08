@@ -1,4 +1,4 @@
-"""All pipeline tunables. Object count is set here, never hardcoded in logic."""
+"""All pipeline tunables."""
 
 from __future__ import annotations
 
@@ -19,8 +19,7 @@ class LayerConfig:
     max_points_per_tile: int
 
 
-# Raising g_mag_limit is how density increases. At G < 16 this yields on the
-# order of ten million sources inside 5000 ly; tune it against a real build.
+# g_mag_limit drives density: G < 16 is order ten million sources inside 5000 ly.
 L1_STELLAR_NEIGHBOURHOOD = LayerConfig(
     key="stellar-neighbourhood",
     unit="ly",

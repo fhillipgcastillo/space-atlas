@@ -51,7 +51,6 @@ def test_round_trip_preserves_values_within_quantization_error() -> None:
     tolerance = (hi - lo) / 131070.0
     assert np.all(np.abs(decoded.position - pts.position) <= tolerance + 1e-9)
 
-    # Exact types survive exactly.
     np.testing.assert_array_equal(decoded.color_index, pts.color_index)
     np.testing.assert_array_equal(decoded.type_flags, pts.type_flags)
     np.testing.assert_array_equal(decoded.local_id, pts.local_id)

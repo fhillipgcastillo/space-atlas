@@ -26,13 +26,6 @@ const loadFixture = (name: string): { buffer: ArrayBuffer; expected: Expected } 
   };
 };
 
-/**
- * Both fixtures run the identical assertions, and the odd one is the point.
- * At 64 points every attribute block length is already a multiple of 4, so the
- * format's padding rule is never exercised - both codecs could disagree about
- * alignment and this suite would still pass, which is precisely the silent
- * drift it exists to catch. At 63 points, five of the six blocks need padding.
- */
 describe.each([
   ['aligned fixture (64 points, no padding)', 'contract-tile'],
   ['odd fixture (63 points, padding after five blocks)', 'contract-tile-odd'],
