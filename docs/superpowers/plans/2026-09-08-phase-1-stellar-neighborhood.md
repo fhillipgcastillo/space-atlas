@@ -1225,7 +1225,7 @@ def icrs_to_galactic_velocity(
 - [ ] **Step 4: Run the tests and confirm they pass**
 
 Run: `.venv/Scripts/python -m pytest pipeline/tests/test_frames.py -v`
-Expected: 11 passed.
+Expected: 12 passed.
 
 If `test_axis_convention_places_the_galactic_centre_on_positive_x` fails with the value on Y or Z, the axis order in the `np.stack` is wrong — fix the stack, not the test.
 
@@ -1342,10 +1342,9 @@ def test_drops_sources_failing_the_parallax_quality_cut() -> None:
 
 
 def test_prefers_bailer_jones_distance_over_parallax_inversion() -> None:
-    record = normalise_gaia(sample_table(), L1_STELLAR_NEIGHBOURHOOD)
-    # Source 1: r_med_geo = 100 pc, whereas 1/parallax would give 100 pc too.
-    # Source 2: r_med_geo = 1000 pc, and 1/parallax would give 1000 pc.
-    # Use a case where they differ to prove which one is chosen.
+    # The first source has parallax 10 mas, so naive inversion would give
+    # 100 pc. Bailer-Jones says 250 pc. The two disagree deliberately, so the
+    # resulting distance proves which source was actually used.
     table = sample_table(r_med_geo=np.array([250.0, 1000.0, np.nan]))
     record = normalise_gaia(table, L1_STELLAR_NEIGHBOURHOOD)
     distance_ly = float(np.linalg.norm(record.position_ly[0]))
