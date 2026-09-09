@@ -246,9 +246,19 @@ Position becomes `p0 + v * t` in the vertex shader — effectively free, since
 velocity is already a resident attribute. Default state is t = 0, present day.
 
 Linear extrapolation is honest for roughly a million years for stars; beyond
-that, galactic orbits curve and the model breaks. The UI must bound the slider
-accordingly. Deep-future extrapolation (Phase 5) needs orbit integration in a
-galactic potential and is deliberately deferred.
+that, galactic orbits curve and the model breaks. The UI bounds the slider
+accordingly. Measured against an RK4 integration in a galactic potential, the
+straight line is 1.4% wrong at 1 Myr and 13.9% at 10 Myr, which is what sets
+the bound.
+
+Deep time (Phase 5) replaces the straight line with a closed-form epicyclic
+orbit in an axisymmetric potential, extending the range to 250 Myr -- about one
+galactic year. It is an explicit mode rather than a silent switch partway along
+the slider, because the epicycle is *worse* than the straight line inside the
+Phase 4 range (4.83 pc against 0.36 pc at 1 Myr) and only overtakes it by
+10 Myr. The modeled population turns on assumed circular orbits at constant
+height, which is a different claim from "it does not move" and gets its own
+disclosure.
 
 ---
 
@@ -384,7 +394,7 @@ retrofitting a field into a baked format means regenerating every tile.
 | 2 | Remaining four layers; crossfade state machine; modeled Milky Way population; scale to 10M+ | **Yes** — full zoom-out, Earth to cosmic web |
 | 3 | Auto-labels with decluttering; search and fly-to; scale HUD; filters and legend; maximum render distance (both modes, both tiers, per 6.1) | **Yes** — the map becomes readable and explorable |
 | 4 | Time playback | **Yes** — watch the sky drift |
-| 5 *(deferred)* | Deep-future extrapolation with galactic potential integration | **Yes** |
+| 5 | Deep-future extrapolation: epicyclic orbits to one galactic year | **Yes** |
 
 **Phase handoff rule:** at the end of every phase that produces something
 runnable, stop and hand off. Do not begin the next phase without direction.
