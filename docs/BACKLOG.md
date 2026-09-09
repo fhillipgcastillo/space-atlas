@@ -24,6 +24,22 @@ The permanent overlay says `EARTH`; the hover card says `from Sol`, since it rep
 
 Adaptive exposure brightens a dim frame toward a target, so a fixed-camera luminance assertion now partly measures the controller's setpoint rather than the field's density. `e2e/render.spec.ts` should meter with `setAutoExposure(false)` at a pinned exposure before asserting absolute values.
 
+## TileManager's evict callback is only half identity-guarded
+
+`tilesBySlot` deletion and the slot release sit behind a
+`tilesBySlot.get(slot)?.mesh === mesh` check, but `meshes.delete(path)`
+and `loader.forget(path)` in the same callback do not. On the
+replace-in-place path — `TileCache.set` for a path already cached, which
+fires `onEvict` for the *old* mesh — that erases the **new** mesh's
+`meshes` entry, so `LayerRenderer.setUniform` would stop reaching it and
+that tile would silently miss uniform updates such as the clock.
+
+Looks unreachable today because the loader will not re-enqueue a cached
+path, so it is an inconsistency rather than an observed defect. It is why
+the "keeps a path on the slot it already holds" test asserts through
+`tilesBySlot` rather than `meshes`. Fix is to move both deletes inside
+the same guard.
+
 ## The e2e suite is slow
 
 8.7 minutes for 13 tests. `frame cost scales with the points drawn` is 3 minutes by itself. Several 6-second fixed waits could become `waitForIdleLoader` calls, which already exists in the spec.
