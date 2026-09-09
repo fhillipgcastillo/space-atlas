@@ -21,6 +21,7 @@ import { ModeledNotice } from './ui/modeledNotice.js';
 import { RangeControls } from './ui/rangeControls.js';
 import { ScaleHud } from './ui/scaleHud.js';
 import { SearchBox } from './ui/searchBox.js';
+import { sampleTimeStats, TimeControls } from './ui/timeControls.js';
 
 const METRES_PER_PARSEC = 3.0856775814913673e16;
 
@@ -40,6 +41,7 @@ declare global {
       activeLayer: () => LayerDef;
       modeledNotice: ModeledNotice;
       rangeControls: RangeControls;
+      timeControls: TimeControls;
     };
   }
 }
@@ -109,6 +111,11 @@ async function boot(): Promise<void> {
   // names index, so modeled points can never appear here.
   const labelObjects = new Map<string, NamedObject[]>();
   const rangeControls = new RangeControls(document.body);
+  const timeControls = new TimeControls(document.body, (years) => viewer.setTimeYears(years));
+  // Walking the live tiles for flag fractions is only worth it while the clock
+  // is off present day, and only a few times a second.
+  const STATS_INTERVAL = 0.5;
+  let sinceStats = STATS_INTERVAL;
   const modeledRenderers = renderers.filter((r) => r.def.key === 'milky-way');
 
   let selection = selectLayers(0, LAYERS);
@@ -179,6 +186,24 @@ async function boot(): Promise<void> {
       ),
     );
 
+    // The clock is shared, so a time set through the viewer has to reach the UI.
+    timeControls.setYears(viewer.getTimeYears());
+    timeControls.advance(dt);
+    sinceStats += dt;
+    if (timeControls.currentYears === 0) sinceStats = STATS_INTERVAL;
+    else if (sinceStats >= STATS_INTERVAL) {
+      sinceStats = 0;
+      timeControls.setStats(
+        sampleTimeStats(
+          renderers
+            .filter((r) => r.currentOpacity > 0)
+            .flatMap((r) =>
+              [...r.manager.tilesBySlot.values()].filter((e) => e.mesh.visible).map((e) => e.tile),
+            ),
+        ),
+      );
+    }
+
     const showing = modeledRenderers.filter((r) => r.currentOpacity > 0);
     if (showing.length > 0) {
       modeledNotice.setFraction(Math.max(...showing.map((r) => r.modeledFraction())));
@@ -230,6 +255,7 @@ async function boot(): Promise<void> {
     activeLayer: () => active,
     modeledNotice,
     rangeControls,
+    timeControls,
   };
   console.info(`layers loaded: ${renderers.map((r) => r.def.key).join(', ')}`);
 }
