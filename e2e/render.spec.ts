@@ -35,8 +35,7 @@ async function waitForIdleLoader(page: Page): Promise<number> {
 function measureLuminance(page: Page): Promise<{ mean: number; litFraction: number }> {
   return page.evaluate(() => {
     const { viewer } = window.__universeMap!;
-    // Viewer keeps the composer private; there is no public accessor yet.
-    (viewer as unknown as { composer: { render: () => void } }).composer.render();
+    viewer.renderFrame();
     const gl = viewer.renderer.getContext();
     const width = viewer.renderer.domElement.width;
     const height = viewer.renderer.domElement.height;

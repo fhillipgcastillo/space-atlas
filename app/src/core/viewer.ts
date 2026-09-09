@@ -9,11 +9,13 @@ import {
   type ShaderMaterial,
   Vector2,
   WebGLRenderer,
+  type WebGLRenderTarget,
 } from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ExposureMeter, adaptExposure, exposureForLuminance } from '../render/autoExposure.js';
 import {
   getAlphaScale as getPointAlphaScale,
   setAlphaScale as setPointAlphaScale,
@@ -31,6 +33,10 @@ const BLOOM_RADIUS = 0.4;
 // into a uniform white sheet instead of reading as stars.
 const BLOOM_THRESHOLD = 0.9;
 
+// readRenderTargetPixels stalls the pipeline, and adaptation runs over hundreds
+// of milliseconds, so four samples a second is plenty.
+const MEASURE_INTERVAL_SECONDS = 0.25;
+
 export class Viewer {
   readonly scene = new Scene();
   readonly camera: PerspectiveCamera;
@@ -40,8 +46,12 @@ export class Viewer {
   private readonly composer: EffectComposer;
   private readonly bloom: UnrealBloomPass;
   private readonly callbacks: ((dt: number) => void)[] = [];
+  private readonly meter: ExposureMeter;
   private lastFrame = performance.now();
   private running = false;
+  private autoExposure = true;
+  private sinceMeasure = MEASURE_INTERVAL_SECONDS;
+  private desiredExposure = 1;
 
   constructor(parent: HTMLElement) {
     this.renderer = new WebGLRenderer({
@@ -81,6 +91,8 @@ export class Viewer {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
+
+    this.meter = new ExposureMeter(this.renderer);
 
     window.addEventListener('resize', this.onResize);
     document.addEventListener('visibilitychange', this.onVisibilityChange);
@@ -134,6 +146,21 @@ export class Viewer {
     this.renderer.toneMappingExposure = Math.max(value, 0);
   }
 
+  getAutoExposure(): boolean {
+    return this.autoExposure;
+  }
+
+  setAutoExposure(enabled: boolean): void {
+    this.autoExposure = enabled;
+    // Measure on the next frame rather than coasting on a stale reading.
+    if (enabled) this.sinceMeasure = MEASURE_INTERVAL_SECONDS;
+  }
+
+  /** Composes one frame. Measuring the canvas any other way misses tone mapping. */
+  renderFrame(): void {
+    this.composer.render();
+  }
+
   getAlphaScale(): number {
     return getPointAlphaScale();
   }
@@ -165,6 +192,7 @@ export class Viewer {
     window.removeEventListener('resize', this.onResize);
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.controls.dispose();
+    this.meter.dispose();
     this.composer.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -179,8 +207,23 @@ export class Viewer {
     // callbacks see the true delta so frame-time telemetry can report stalls.
     this.controls.update(Math.min(dt, 0.1));
     for (const cb of this.callbacks) cb(dt);
+
+    // The passes composite into whichever buffer is the read buffer on entry;
+    // OutputPass then swaps, so capture it first to meter the HDR frame the
+    // tone mapper saw rather than the clipped canvas.
+    const composed = this.composer.readBuffer;
     this.composer.render();
+    if (this.autoExposure) this.updateExposure(composed, dt);
   };
+
+  private updateExposure(composed: WebGLRenderTarget, dt: number): void {
+    this.sinceMeasure += dt;
+    if (this.sinceMeasure >= MEASURE_INTERVAL_SECONDS) {
+      this.sinceMeasure = 0;
+      this.desiredExposure = exposureForLuminance(this.meter.measure(composed));
+    }
+    this.setExposure(adaptExposure(this.getExposure(), this.desiredExposure, dt));
+  }
 
   // rAF is suspended while the tab is hidden, so the first delta after it wakes
   // would be the time spent away rather than a frame time.
