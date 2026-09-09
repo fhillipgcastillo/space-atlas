@@ -41,7 +41,9 @@ Galaxies are a fourth case: `Vpec` is a line-of-sight peculiar velocity, so they
 
 **The unit conversion is the whole risk.** Velocity is stored in km/s; positions are in the layer's own unit. One year of drift at 30 km/s is about 6.3 AU, 1e-4 ly, or 1e-10 Mly — three layers, three scales, and a wrong factor moves stars by a plausible-looking amount that is silently wrong by orders of magnitude.
 
-Pin it with a test using a known case: **Barnard's Star moves 10.3 arcseconds per year**, and at 30 km/s a star drifts 1 parsec in roughly 9,800 years. Assert the scale factor reproduces a hand-computed displacement in each of AU, ly and Mly.
+Pin it against independent physics in each of AU, ly and Mly. **Barnard's Star** is the cleanest check: proper motion 10.3577 arcsec/yr at 1.8266 pc must give exactly mu*d = 18.919 AU/yr, because one arcsecond at one parsec subtends one AU.
+
+**Correction:** an earlier draft of this plan claimed 30 km/s crosses 1 parsec in about 9,800 years. That is the figure for 100 km/s; 30 km/s takes 32,593 years, since 1 pc/Myr is 0.9778 km/s. Calibrating to the wrong number would have made the whole map drift 3.3x too fast.
 
 In the vertex shader, apply the offset before the bounding-box dequantisation is used for distance:
 

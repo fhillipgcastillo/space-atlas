@@ -15,6 +15,9 @@ export function createTileMesh(tile: DecodedTile, material: RawShaderMaterial): 
 
   // normalized = true so the shader sees the 0..1 bounding-box fraction the format defines.
   geometry.setAttribute('position', new Uint16BufferAttribute(tile.positionQuantized, 3, true));
+  // tile.velocity is raw float16 bits in km/s; Float16BufferAttribute uploads
+  // them as HALF_FLOAT verbatim, so nothing is decoded on the CPU.
+  geometry.setAttribute('aVelocity', new Float16BufferAttribute(tile.velocity, 3));
   geometry.setAttribute('aColourIndex', new Uint16BufferAttribute(tile.colorIndex, 1, true));
   geometry.setAttribute('aAbsMag', new Float16BufferAttribute(tile.absMag, 1));
   geometry.setAttribute('aTypeFlags', new Uint8BufferAttribute(tile.typeFlags, 1, true));

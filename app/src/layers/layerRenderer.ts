@@ -1,5 +1,6 @@
 import { Group, type RawShaderMaterial } from 'three';
 import { createPointMaterial, NO_CUTOFF } from '../render/pointMaterial.js';
+import { getTimeYears, velocityScaleForLayer } from '../render/timeline.js';
 import { FLAG_MODELED } from '../render/typeFlags.js';
 import type { DecodedTile } from '../tiles/format.js';
 import { TileManager } from '../tiles/tileManager.js';
@@ -19,6 +20,7 @@ export class LayerRenderer {
   private opacity = 1;
   private originCutoff = Number.POSITIVE_INFINITY;
   private cameraCutoff = Number.POSITIVE_INFINITY;
+  private timeYears = 0;
   private readonly modeledCounts = new WeakMap<DecodedTile, number>();
 
   private constructor(
@@ -28,6 +30,7 @@ export class LayerRenderer {
     private readonly material: RawShaderMaterial,
   ) {
     this.group.add(manager.group);
+    this.setUniform('uVelocityScale', velocityScaleForLayer(def.unitInMetres));
   }
 
   static async create(def: LayerDef, unitInParsecs: number): Promise<LayerRenderer> {
@@ -39,6 +42,12 @@ export class LayerRenderer {
 
   get currentOpacity(): number {
     return this.opacity;
+  }
+
+  setTimeYears(years: number): void {
+    if (years === this.timeYears) return;
+    this.timeYears = years;
+    this.setUniform('uTimeYears', years);
   }
 
   setModeledDim(value: number): void {
@@ -89,6 +98,9 @@ export class LayerRenderer {
   }
 
   update(view: ViewState): void {
+    // Ahead of the visibility check: a layer that streams in later still has to
+    // pick up the clock it missed while it was hidden.
+    this.setTimeYears(getTimeYears());
     // An invisible layer must not stream: it would compete for the eight
     // in-flight slots with the layer actually on screen.
     if (this.opacity <= 0) return;

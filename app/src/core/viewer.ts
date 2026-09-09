@@ -20,6 +20,7 @@ import {
   getAlphaScale as getPointAlphaScale,
   setAlphaScale as setPointAlphaScale,
 } from '../render/pointMaterial.js';
+import { getTimeYears, setTimeYears } from '../render/timeline.js';
 import { FlyControls } from './flyControls.js';
 
 // Four decades of distance between the planes; the logarithmic depth buffer is
@@ -177,6 +178,18 @@ export class Viewer {
         if (uniform) uniform.value = value;
       }
     });
+  }
+
+  getTimeYears(): number {
+    return getTimeYears();
+  }
+
+  /**
+   * Clamped to the range where p0 + v*t is still defensible. Each LayerRenderer
+   * reads the clock in its own update, so this lands on the next frame.
+   */
+  setTimeYears(years: number): void {
+    setTimeYears(years);
   }
 
   start(): void {

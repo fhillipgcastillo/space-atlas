@@ -28,8 +28,11 @@ uniform float uShowModeled;
 uniform float uFluxWeight;
 uniform float uMaxOriginDistance;
 uniform float uMaxCameraDistance;
+uniform float uTimeYears;
+uniform float uVelocityScale;
 
 in vec3 position;
+in vec3 aVelocity;
 in float aColourIndex;
 in float aAbsMag;
 in float aTypeFlags;
@@ -50,7 +53,10 @@ void main() {
     return;
   }
 
-  vec3 layerPosition = uBboxMin + position * uBboxExtent;
+  // The drift lands before the distance term, so a star's apparent magnitude
+  // tracks where it is at time t, not where it was at t = 0.
+  vec3 layerPosition =
+      uBboxMin + position * uBboxExtent + aVelocity * uTimeYears * uVelocityScale;
   vec4 viewPosition = modelViewMatrix * vec4(layerPosition, 1.0);
 
   // Hard binary cutoff by design (spec 6.1): no fade band, no alpha ramp.
@@ -161,6 +167,8 @@ export function createPointMaterial(unitInParsecs: number): RawShaderMaterial {
       uFluxWeight: { value: 1 },
       uMaxOriginDistance: { value: NO_CUTOFF },
       uMaxCameraDistance: { value: NO_CUTOFF },
+      uTimeYears: { value: 0 },
+      uVelocityScale: { value: 0 },
       uLayerOpacity: { value: 1 },
       uColourRamp: { value: ramp },
     },
