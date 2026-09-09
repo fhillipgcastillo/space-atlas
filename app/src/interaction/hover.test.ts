@@ -8,7 +8,18 @@ import {
   FLAG_NO_RADIAL_VELOCITY,
 } from '../render/typeFlags.js';
 import { decodeFloat16, type DecodedTile } from '../tiles/format.js';
-import { distanceAtTime, hoverCardText } from './hover.js';
+import {
+  circularSpeed,
+  orbitPosition,
+  PC_PER_MYR_PER_KMS,
+  R0_PC,
+  SOLAR_MOTION_KMS,
+  toGalactocentric,
+  toGalactocentricVelocity,
+  Z_SUN_PC,
+} from '../render/galacticOrbit.js';
+import { DEEP_MODEL_HUBBLE, DEEP_MODEL_LINEAR, DEEP_MODEL_ORBIT } from '../render/pointMaterial.js';
+import { distanceAtTime, hoverCardText, type DeepTimeState } from './hover.js';
 
 const base = {
   label: undefined as string | undefined,
@@ -129,5 +140,89 @@ describe('distanceAtTime', () => {
 
   it('leaves a zero-velocity point exactly where it is', () => {
     expect(distanceAtTime(tileWith(10, 0), 0, 1_000_000, LY_PER_YEAR_PER_KMS)).toBe(10);
+  });
+});
+
+
+const PC_PER_LY = 9.4607304725808e15 / 3.0856775814913673e16;
+const T_200_MYR = 2e8;
+
+const orbitState: DeepTimeState = {
+  model: DEEP_MODEL_ORBIT,
+  layerParsecsPerUnit: PC_PER_LY,
+  solarMotionKms: SOLAR_MOTION_KMS,
+};
+
+function heliocentricLy(galactocentricPc: readonly [number, number, number]): number {
+  return (
+    Math.hypot(galactocentricPc[0] + R0_PC, galactocentricPc[1], galactocentricPc[2] - Z_SUN_PC) /
+    PC_PER_LY
+  );
+}
+
+describe('distanceAtTime under deep time', () => {
+  it('stays on the linear model when deep time is off or the layer is linear', () => {
+    const tile = tileWith(10, HALF_100);
+    const linear = distanceAtTime(tile, 0, T_200_MYR, LY_PER_YEAR_PER_KMS);
+    expect(distanceAtTime(tile, 0, T_200_MYR, LY_PER_YEAR_PER_KMS, undefined)).toBe(linear);
+    expect(
+      distanceAtTime(tile, 0, T_200_MYR, LY_PER_YEAR_PER_KMS, {
+        ...orbitState,
+        model: DEEP_MODEL_LINEAR,
+      }),
+    ).toBe(linear);
+  });
+
+  it('follows the galactic orbit instead of extrapolating the velocity', () => {
+    const expected = heliocentricLy(
+      orbitPosition(
+        toGalactocentric([10 * PC_PER_LY, 0, 0]),
+        toGalactocentricVelocity([100, 0, 0]),
+        T_200_MYR,
+      ),
+    );
+    const distance = distanceAtTime(
+      tileWith(10, HALF_100),
+      0,
+      T_200_MYR,
+      LY_PER_YEAR_PER_KMS,
+      orbitState,
+    );
+    expect(distance).toBeCloseTo(expected, 9);
+  });
+
+  it('diverges from the linear model by tens of thousands of light years at 200 Myr', () => {
+    const tile = tileWith(10, HALF_100);
+    const linear = distanceAtTime(tile, 0, T_200_MYR, LY_PER_YEAR_PER_KMS);
+    const orbit = distanceAtTime(tile, 0, T_200_MYR, LY_PER_YEAR_PER_KMS, orbitState);
+    expect(linear).toBeCloseTo(66722.8, 1);
+    expect(orbit).toBeCloseTo(9695.5, 1);
+    expect(Math.abs(orbit - linear)).toBeGreaterThan(50000);
+  });
+
+  it('carries a modeled point on the circular orbit its radius implies', () => {
+    const tile = tileWith(10, 0);
+    tile.typeFlags[0] = CLASS_STAR | FLAG_MODELED;
+    const radiusPc = R0_PC - 10 * PC_PER_LY;
+    const periodYears =
+      ((2 * Math.PI * radiusPc) / (circularSpeed(radiusPc) * PC_PER_MYR_PER_KMS)) * 1e6;
+
+    expect(distanceAtTime(tile, 0, periodYears, LY_PER_YEAR_PER_KMS)).toBe(10);
+    // Half a turn puts it on the far side of the Galaxy, a full turn back home.
+    expect(
+      distanceAtTime(tile, 0, periodYears / 2, LY_PER_YEAR_PER_KMS, orbitState),
+    ).toBeCloseTo((2 * R0_PC - 10 * PC_PER_LY) / PC_PER_LY, 3);
+    expect(distanceAtTime(tile, 0, periodYears, LY_PER_YEAR_PER_KMS, orbitState)).toBeCloseTo(
+      10,
+      6,
+    );
+  });
+
+  it('stretches an extragalactic point with the Hubble flow', () => {
+    const hubble: DeepTimeState = { ...orbitState, model: DEEP_MODEL_HUBBLE };
+    expect(distanceAtTime(tileWith(10, 0), 0, 13.97e9, LY_PER_YEAR_PER_KMS, hubble)).toBeCloseTo(
+      20,
+      9,
+    );
   });
 });
