@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { TileNode } from './tileset.js';
-import { distanceToBox, screenSpaceError, selectNodes } from './traversal.js';
+import {
+  distanceToBox,
+  screenSpaceError,
+  selectNodes,
+  selectNodesWithFlux,
+} from './traversal.js';
 
 const node = (
   path: string,
@@ -110,5 +115,94 @@ describe('selectNodes', () => {
     const paths = selectNodes(root, view, 16, 1000).map((n) => n.path);
 
     expect(paths).toEqual(['r', 'rGood', 'rGood0', 'rDeg']);
+  });
+});
+
+const withCounts = (
+  path: string,
+  min: number[],
+  max: number[],
+  error: number,
+  pointCount: number,
+  totalPointCount: number,
+  children: TileNode[] = [],
+): TileNode => ({
+  path,
+  boundingBox: { min, max },
+  geometricError: error,
+  pointCount,
+  totalPointCount,
+  children,
+});
+
+describe('selectNodesWithFlux', () => {
+  it('weighs a lone leaf by how many points it stands in for', () => {
+    const leaf = withCounts('r', [-1, -1, -1], [1, 1, 1], 0.0001, 1000, 8000);
+    const [selected] = selectNodesWithFlux(leaf, view, 16, 100);
+    expect(selected!.fluxWeight).toBeCloseTo(8);
+  });
+
+  it('weighs a fully refined parent as 1', () => {
+    const a = withCounts('r0', [-1, -1, -1], [1, 1, 1], 1e6, 400, 400);
+    const b = withCounts('r1', [-1, -1, -1], [1, 1, 1], 1e6, 400, 400);
+    const root = withCounts('r', [-1, -1, -1], [1, 1, 1], 1e9, 100, 900, [a, b]);
+
+    const selected = selectNodesWithFlux(root, view, 1, 100);
+    const parent = selected.find((s) => s.node.path === 'r')!;
+    expect(parent.fluxWeight).toBeCloseTo(1);
+  });
+
+  it('counts only the children that were left out', () => {
+    const near = withCounts('r0', [-1, -1, -1], [1, 1, 1], 1e6, 100, 100);
+    const far = withCounts('r1', [1e9, 1e9, 1e9], [1e9 + 1, 1e9 + 1, 1e9 + 1], 1e-9, 700, 700);
+    const root = withCounts(
+      'r',
+      [-1, -1, -1],
+      [1e9 + 1, 1e9 + 1, 1e9 + 1],
+      1e9,
+      100,
+      900,
+      [near, far],
+    );
+
+    // A budget of 2 is what leaves the far child out: selection is additive and
+    // pops unconditionally, so nothing is skipped while the budget has room.
+    const selected = selectNodesWithFlux(root, view, 1, 2);
+    const paths = selected.map((s) => s.node.path);
+    expect(paths).toContain('r');
+    expect(paths).not.toContain('r1');
+
+    const parent = selected.find((s) => s.node.path === 'r')!;
+    expect(parent.fluxWeight).toBeCloseTo(8);
+  });
+
+  it('never returns a weight below 1', () => {
+    const leaf = withCounts('r', [-1, -1, -1], [1, 1, 1], 0.0001, 500, 500);
+    expect(selectNodesWithFlux(leaf, view, 16, 100)[0]!.fluxWeight).toBeGreaterThanOrEqual(1);
+  });
+
+  it('survives a node that draws no points', () => {
+    const leaf = withCounts('r', [-1, -1, -1], [1, 1, 1], 0.0001, 0, 0);
+    const [selected] = selectNodesWithFlux(leaf, view, 16, 100);
+    expect(Number.isFinite(selected!.fluxWeight)).toBe(true);
+  });
+
+  it('conserves total represented points across the selection', () => {
+    const a = withCounts('r0', [-1, -1, -1], [1, 1, 1], 1e6, 400, 400);
+    const b = withCounts('r1', [2e9, 2e9, 2e9], [2e9 + 1, 2e9 + 1, 2e9 + 1], 1e-9, 400, 400);
+    const root = withCounts('r', [-1, -1, -1], [2e9 + 1, 2e9 + 1, 2e9 + 1], 1e9, 100, 900, [a, b]);
+
+    const selected = selectNodesWithFlux(root, view, 1, 100);
+    const represented = selected.reduce((sum, s) => sum + s.node.pointCount * s.fluxWeight, 0);
+    expect(represented).toBeCloseTo(900);
+  });
+
+  it('agrees with selectNodes on which nodes are chosen', () => {
+    const child = withCounts('r0', [-1, -1, -1], [1, 1, 1], 0.0001, 10, 10);
+    const root = withCounts('r', [-1, -1, -1], [1, 1, 1], 1000, 10, 20, [child]);
+
+    expect(selectNodesWithFlux(root, view, 16, 100).map((s) => s.node.path)).toEqual(
+      selectNodes(root, view, 16, 100).map((n) => n.path),
+    );
   });
 });

@@ -49,16 +49,21 @@ interface Candidate {
   error: number;
 }
 
+export interface SelectedNode {
+  node: TileNode;
+  fluxWeight: number;
+}
+
 /**
  * Selects nodes to draw. Refinement is additive: selecting a child does not
  * deselect its parent, because a parent holds points its children do not.
  */
-export function selectNodes(
+export function selectNodesWithFlux(
   root: TileNode,
   view: ViewState,
   threshold: number,
   maxNodes: number,
-): TileNode[] {
+): SelectedNode[] {
   const selected: TileNode[] = [];
   const frontier: Candidate[] = [{ node: root, error: nodeScreenSpaceError(root, view) }];
 
@@ -78,5 +83,25 @@ export function selectNodes(
     }
   }
 
-  return selected;
+  const chosen = new Set(selected.map((node) => node.path));
+  return selected.map((node) => {
+    // Everything at and beneath the node, less the parts a selected child now
+    // draws itself. Subtracting rather than adding also covers the points a
+    // node stands in for that are not in its `children` at all.
+    let represented = node.totalPointCount;
+    for (const child of node.children) {
+      if (chosen.has(child.path)) represented -= child.totalPointCount;
+    }
+    const drawn = node.pointCount;
+    return { node, fluxWeight: drawn > 0 ? Math.max(represented / drawn, 1) : 1 };
+  });
+}
+
+export function selectNodes(
+  root: TileNode,
+  view: ViewState,
+  threshold: number,
+  maxNodes: number,
+): TileNode[] {
+  return selectNodesWithFlux(root, view, threshold, maxNodes).map((s) => s.node);
 }
