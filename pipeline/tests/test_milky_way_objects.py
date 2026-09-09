@@ -69,3 +69,28 @@ def test_names_are_returned_in_local_id_order() -> None:
     record, names = normalise_milky_way_objects(sample(), L2_MILKY_WAY)
     assert len(names) == len(record)
     assert names[0] == "Sagittarius A*"
+
+
+def test_clusters_nearer_than_the_layer_minimum_are_kept() -> None:
+    # The stellar neighbourhood carries Gaia stars, not clusters, so a cluster
+    # at 500 ly belongs to no other layer. Cutting it here would lose it.
+    table = sample(distance_ly=np.array([26670.0, 20000.0, 500.0, 900000.0]))
+    record, names = normalise_milky_way_objects(table, L2_MILKY_WAY)
+
+    assert "Pleiades-like" in names
+    near = float(np.linalg.norm(record.position_ly[names.index("Pleiades-like")]))
+    assert near == pytest.approx(500.0, rel=1e-6)
+
+
+def test_objects_beyond_the_outer_bound_are_still_dropped() -> None:
+    table = sample(distance_ly=np.array([26670.0, 20000.0, 500.0, 900000.0]))
+    _, names = normalise_milky_way_objects(table, L2_MILKY_WAY)
+
+    assert "Far cluster" not in names
+
+
+def test_a_non_positive_distance_is_dropped_rather_than_placed_at_the_origin() -> None:
+    table = sample(distance_ly=np.array([26670.0, 0.0, -5.0, 20000.0]))
+    record, _ = normalise_milky_way_objects(table, L2_MILKY_WAY)
+
+    assert len(record) == 2

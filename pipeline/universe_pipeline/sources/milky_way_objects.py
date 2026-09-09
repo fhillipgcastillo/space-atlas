@@ -112,8 +112,12 @@ def normalise_milky_way_objects(
     table: Mapping[str, np.ndarray], layer: LayerConfig
 ) -> tuple[ObjectRecord, list[str]]:
     distance_ly = np.asarray(table["distance_ly"], dtype=np.float64)
+    # Only the outer bound applies. min_radius exists so a layer does not repeat
+    # what an inner layer already carries, and the stellar neighbourhood carries
+    # Gaia stars, never clusters - so cutting there would leave every cluster
+    # nearer than 3000 ly in no layer at all.
     keep = np.isfinite(distance_ly)
-    keep &= distance_ly >= layer.min_radius
+    keep &= distance_ly > 0.0
     keep &= distance_ly <= layer.max_radius
 
     ra = np.asarray(table["ra"], dtype=np.float64)[keep]
