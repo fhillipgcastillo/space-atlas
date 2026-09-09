@@ -40,6 +40,18 @@ the "keeps a path on the slot it already holds" test asserts through
 `tilesBySlot` rather than `meshes`. Fix is to move both deletes inside
 the same guard.
 
+## The Hubble time is duplicated between the shader and the CPU
+
+`T_HUBBLE_YEARS = 13.97e9` is a GLSL `const` inside the shader string in
+`pointMaterial.ts` and a separate local constant in
+`app/src/interaction/hover.ts`. The two must agree or the hover card
+reports a different distance from the one the renderer draws on the Mly
+layers, and nothing catches a divergence.
+
+Promote it to a shared export and import it in both. One line; it was
+left only because `pointMaterial.ts` was out of scope for the change that
+introduced the duplicate.
+
 ## The e2e suite is slow
 
 8.7 minutes for 13 tests. `frame cost scales with the points drawn` is 3 minutes by itself. Several 6-second fixed waits could become `waitForIdleLoader` calls, which already exists in the spec.
