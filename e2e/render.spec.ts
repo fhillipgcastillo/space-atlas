@@ -82,6 +82,10 @@ test('streams tiles in as the camera approaches', async ({ page }) => {
 test('renders something other than a black screen', async ({ page }) => {
   await waitForIdleLoader(page);
   const canvas = page.locator('canvas');
+  // A canvas element screenshot still paints the DOM drawn over it into the
+  // clip, so the blank frame would calibrate against the control panel rather
+  // than a dark canvas: 39 KB of sliders and text instead of ~4 KB of black.
+  await page.evaluate(() => window.__universeMap!.controlPanel.setChromeVisible(false));
 
   const withStars = await canvas.screenshot();
   await page.evaluate(() => {
