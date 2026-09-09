@@ -771,3 +771,237 @@ test('hover picks the field where it is at the current time', async ({ page }) =
   // something a time-blind pick pass could satisfy.
   expect(median(atZero)).toBeGreaterThan(24);
 });
+
+// The screenAt helpers above replicate the linear p0 + v*t, which is only what
+// the GPU draws while deep time is off; every test that uses one keeps the
+// toggle off. The deep-time tests below never replicate the orbit: they read
+// back where the GPU actually put a point, through the pick pass.
+async function enableDeepTime(page: Page, years: number): Promise<void> {
+  await page.evaluate(async (value) => {
+    const { timeControls } = window.__universeMap!;
+    timeControls.setDeep(true);
+    timeControls.setYears(value);
+    for (let i = 0; i < 6; i++) await new Promise((r) => requestAnimationFrame(r));
+  }, years);
+}
+
+test('the deep time toggle extends the range and reads out in millions of years', async ({
+  page,
+}) => {
+  const slider = page.getByTestId('time-slider');
+  await expect(slider).toHaveAttribute('max', '1000000');
+  await expect(slider).toHaveAttribute('min', '-1000000');
+
+  await page.getByTestId('time-deep').check();
+  await expect(slider).toHaveAttribute('max', '250000000');
+  await expect(slider).toHaveAttribute('min', '-250000000');
+
+  const box = (await slider.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width + 200, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(page.getByTestId('time-readout')).toHaveText('+250.0 million years');
+  expect(await page.evaluate(() => window.__universeMap!.timeControls.currentYears)).toBe(
+    250_000_000,
+  );
+  const deepUniforms = await page.evaluate(() =>
+    window.__universeMap!.layers.flatMap((layer) =>
+      [...layer.manager.tilesBySlot.values()].map(
+        (entry) =>
+          (entry.mesh.material as unknown as { uniforms: Record<string, { value: number }> })
+            .uniforms['uDeepTime']!.value,
+      ),
+    ),
+  );
+  expect(deepUniforms.length).toBeGreaterThan(0);
+  expect(deepUniforms.every((value) => value === 1)).toBe(true);
+
+  // Off again and the range is the Phase 4 one, with the clock folded back into it.
+  await page.getByTestId('time-deep').uncheck();
+  await expect(slider).toHaveAttribute('max', '1000000');
+  await expect(page.getByTestId('time-readout')).toHaveText('+1,000,000 years');
+  expect(await clockYears(page)).toBe(1_000_000);
+});
+
+test('the deep disclosure replaces the Phase 4 one, and only in deep mode', async ({ page }) => {
+  await page.evaluate(async () => {
+    window.__universeMap!.viewer.camera.position.set(0, 0, 50000);
+    await new Promise((r) => setTimeout(r, 8000));
+  });
+  const disclosure = page.getByTestId('time-disclosure');
+  await setClock(page, 250_000);
+  await expect(disclosure).toBeVisible();
+  await expect(disclosure).toContainText('stay perfectly still');
+  await expect(disclosure).toContainText('straight-line extrapolation');
+  const shallow = (await disclosure.textContent())!;
+
+  await enableDeepTime(page, 200_000_000);
+  await expect(disclosure).toContainText('axisymmetric');
+  const deep = (await disclosure.textContent())!;
+  console.log(`phase 4 disclosure: ${shallow}`);
+  console.log(`deep disclosure: ${deep}`);
+
+  // The Phase 4 sentence is false once the modeled points are on orbits.
+  expect(deep).not.toContain('stay perfectly still');
+  expect(deep).not.toContain('no kinematics');
+  expect(deep).toContain('assumed circular orbits');
+  expect(deep).toContain('vertical structure is held static');
+  expect(deep).toContain('no bar, no spiral arms, no scattering off molecular clouds, no mergers');
+  expect(deep).toContain('39.6 km/s/kpc');
+  expect(deep).toContain('5.4% of galactocentric radius at 250 million years');
+  expect(deep).toContain('no measured radial velocity');
+
+  await page.getByTestId('time-deep').uncheck();
+  await expect(disclosure).toContainText('straight-line extrapolation');
+  expect(await disclosure.textContent()).not.toContain('axisymmetric');
+});
+
+test('at 200 Myr the field is sheared, not rigidly translated', async ({ page }) => {
+  test.setTimeout(300_000);
+  await page.evaluate(async () => {
+    window.__universeMap!.viewer.camera.position.set(0, 0, 50000);
+    await new Promise((r) => setTimeout(r, 8000));
+  });
+  await waitForIdleLoader(page);
+  await enableDeepTime(page, 200_000_000);
+
+  const probe = await page.evaluate(() => {
+    const { viewer, picking, ownerForSlot } = window.__universeMap!;
+    type SlotEntry = NonNullable<
+      ReturnType<NonNullable<ReturnType<typeof ownerForSlot>>['manager']['tilesBySlot']['get']>
+    >;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const scratch = viewer.camera.position.clone();
+    const uniformsOf = (entry: SlotEntry): Record<string, { value: unknown }> =>
+      (entry.mesh.material as unknown as Record<string, Record<string, { value: unknown }>>)[
+        'uniforms'
+      ]!;
+
+    const project = (entry: SlotEntry, x: number, y: number, z: number) => {
+      scratch.set(x, y, z).applyMatrix4(entry.mesh.matrixWorld).project(viewer.camera);
+      return { x: ((scratch.x + 1) / 2) * width, y: ((1 - scratch.y) / 2) * height };
+    };
+
+    // Present day needs no model: it is the baked position, so this replicates
+    // nothing the shader does past t = 0.
+    const basePosition = (entry: SlotEntry, index: number): [number, number, number] => {
+      const uniforms = uniformsOf(entry);
+      const min = uniforms['uBboxMin']!.value as { x: number; y: number; z: number };
+      const extent = uniforms['uBboxExtent']!.value as { x: number; y: number; z: number };
+      const position = entry.mesh.geometry.attributes['position']!;
+      return [
+        min.x + position.getX(index) * extent.x,
+        min.y + position.getY(index) * extent.y,
+        min.z + position.getZ(index) * extent.z,
+      ];
+    };
+
+    const R0_PC = 8122;
+    const Z_SUN_PC = 20.8;
+    const hits: {
+      layer: string;
+      radiusPc: number;
+      dx: number;
+      dy: number;
+      gcNow: number;
+      gcThen: number;
+      years: number;
+    }[] = [];
+    let sampled = 0;
+    for (let x = 160; x < 1200; x += 40) {
+      for (let y = 120; y < 660; y += 40) {
+        sampled++;
+        const id = picking.pickAt(x, y);
+        if (!id) continue;
+        const owner = ownerForSlot(id.tileSlot);
+        const entry = owner?.manager.tilesBySlot.get(id.tileSlot);
+        if (!owner || !entry || id.vertexIndex >= entry.tile.pointCount) continue;
+        const uniforms = uniformsOf(entry);
+        const parsecsPerUnit = uniforms['uLayerParsecsPerUnit']!.value as number;
+        const base = basePosition(entry, id.vertexIndex);
+        const now = project(entry, base[0], base[1], base[2]);
+        // The Galactic Centre sits R0 up the +x axis from the Sun, which is
+        // itself Z_SUN above the plane.
+        const centre = project(entry, R0_PC / parsecsPerUnit, 0, -Z_SUN_PC / parsecsPerUnit);
+        hits.push({
+          layer: owner.def.key,
+          radiusPc: Math.hypot(base[0] * parsecsPerUnit - R0_PC, base[1] * parsecsPerUnit),
+          dx: x - now.x,
+          dy: y - now.y,
+          gcNow: Math.hypot(now.x - centre.x, now.y - centre.y),
+          gcThen: Math.hypot(x - centre.x, y - centre.y),
+          years: uniforms['uTimeYears']!.value as number,
+        });
+      }
+    }
+    return { sampled, hits };
+  });
+
+  const median = (values: number[]): number => {
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)] ?? 0;
+  };
+  // Close to the projected centre the pick point's own width dominates the
+  // radius, and every azimuth is a few pixels apart.
+  const hits = probe.hits.filter((h) => h.gcNow > 150);
+
+  expect(probe.hits.length).toBeGreaterThan(0);
+  expect(probe.hits.every((h) => h.years === 200_000_000)).toBe(true);
+  expect(hits.length).toBeGreaterThan(8);
+
+  const magnitudes = hits.map((h) => Math.hypot(h.dx, h.dy));
+  const meanDx = hits.reduce((sum, h) => sum + h.dx, 0) / hits.length;
+  const meanDy = hits.reduce((sum, h) => sum + h.dy, 0) / hits.length;
+  const meanMagnitude = Math.hypot(meanDx, meanDy);
+  // The best rigid translation of this field is its mean displacement; what is
+  // left over is the part no translation can explain.
+  const residual = Math.sqrt(
+    hits.reduce((sum, h) => sum + (h.dx - meanDx) ** 2 + (h.dy - meanDy) ** 2, 0) / hits.length,
+  );
+  const angles = hits.map((h) => (Math.atan2(h.dy, h.dx) * 180) / Math.PI);
+  const angleSpread = Math.max(...angles) - Math.min(...angles);
+  const radialShift = hits.map((h) => Math.abs(h.gcThen - h.gcNow));
+  const radialChange = hits.map((h) => Math.abs(h.gcThen - h.gcNow) / h.gcNow);
+
+  const byRadius = [...hits].sort((a, b) => a.radiusPc - b.radiusPc);
+  const half = Math.floor(byRadius.length / 2);
+  const meanOf = (group: typeof hits) => ({
+    radiusPc: group.reduce((s, h) => s + h.radiusPc, 0) / group.length,
+    dx: group.reduce((s, h) => s + h.dx, 0) / group.length,
+    dy: group.reduce((s, h) => s + h.dy, 0) / group.length,
+  });
+  const innerMean = meanOf(byRadius.slice(0, half));
+  const outerMean = meanOf(byRadius.slice(half));
+
+  console.log(
+    `shear at 200 Myr: ${hits.length} hits over ${probe.sampled} probes, ` +
+      `median displacement ${median(magnitudes).toFixed(1)}px, ` +
+      `mean translation ${meanMagnitude.toFixed(1)}px, residual about it ${residual.toFixed(1)}px, ` +
+      `direction spread ${angleSpread.toFixed(0)} deg, ` +
+      `median galactocentric radius ${median(hits.map((h) => h.gcNow)).toFixed(0)}px, ` +
+      `changing by ${median(radialShift).toFixed(1)}px (${(median(radialChange) * 100).toFixed(1)}%)`,
+  );
+  console.log(
+    `inner half (mean R ${(innerMean.radiusPc / 1000).toFixed(1)} kpc) moved ` +
+      `(${innerMean.dx.toFixed(1)}, ${innerMean.dy.toFixed(1)})px; outer half ` +
+      `(mean R ${(outerMean.radiusPc / 1000).toFixed(1)} kpc) moved ` +
+      `(${outerMean.dx.toFixed(1)}, ${outerMean.dy.toFixed(1)})px`,
+  );
+
+  // The field moved at all.
+  expect(median(magnitudes)).toBeGreaterThan(100);
+  // And not as one piece: a rigid translation leaves no residual about its mean
+  // and points every displacement the same way.
+  expect(residual).toBeGreaterThan(meanMagnitude);
+  expect(angleSpread).toBeGreaterThan(60);
+  // What differential rotation does instead: each point keeps its galactocentric
+  // radius and changes azimuth. A translation of this size cannot: displaced by
+  // |d| in a direction unrelated to the centre, the median radius moves by
+  // 0.71|d|. The residual here is the model's own 4% of R at this range plus the
+  // width of the pick point.
+  expect(median(radialChange)).toBeLessThan(0.25);
+  expect(median(radialShift)).toBeLessThan(0.4 * median(magnitudes));
+});

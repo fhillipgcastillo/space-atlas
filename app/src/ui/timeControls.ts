@@ -17,6 +17,22 @@ const SAMPLE_STRIDE = 97;
 
 export const RATES = [1_000, 10_000, 100_000] as const;
 
+// The shared clock in timeline.ts stays capped at the linear range: it is read
+// by every layer and its bound is what makes p0 + v*t defensible. Deep time is
+// a separate bound owned here, and main.ts writes it to the layers directly.
+export const DEEP_MAX_YEARS = 250_000_000;
+export const DEEP_MIN_YEARS = -250_000_000;
+
+// 250 Myr at 100k yr/s would take 42 minutes of wall clock to cross.
+const DEEP_RATE_SCALE = 250;
+
+export function formatDeepYears(years: number): string {
+  const rounded = Math.round(years);
+  if (Math.abs(rounded) <= MAX_YEARS) return formatYears(rounded);
+  const millions = rounded / 1e6;
+  return `${millions > 0 ? '+' : '−'}${Math.abs(millions).toFixed(1)} million years`;
+}
+
 function sharePercent(fraction: number): number {
   if (!Number.isFinite(fraction) || fraction <= 0) return 0;
   if (fraction >= 1) return 100;
@@ -45,6 +61,37 @@ export function timeDisclosure(stats: TimeStats): string {
 
   parts.push(
     'Past about a million years the straight-line extrapolation stops being physical, which is where this range ends.',
+  );
+
+  return parts.join(' ');
+}
+
+export function deepTimeDisclosure(stats: TimeStats): string {
+  const modeled = sharePercent(stats.modeledFraction);
+  const parts: string[] = [
+    'These are epicyclic orbits in an axisymmetric, static potential: no bar, no spiral arms, no scattering off molecular clouds, no mergers.',
+  ];
+
+  if (Number.isFinite(stats.noRadialVelocityFraction)) {
+    const noRadial = sharePercent(stats.noRadialVelocityFraction);
+    parts.push(
+      noRadial === 0
+        ? 'Every catalogued object in view carries a measured radial velocity.'
+        : `${noRadial}% of the catalogued objects in view have no measured radial velocity, so they set out on a partly invented velocity, with the line-of-sight component substituted as zero. An orbit amplifies that error rather than diluting it: a wrong velocity is a wrong angular momentum, which is a wrong orbit for the whole run.`,
+    );
+  }
+
+  if (modeled > 0) {
+    parts.push(
+      `${modeled}% of what is on screen is a modeled population with no measured motion at all. It is carried on assumed circular orbits, at the circular speed of its own galactocentric radius, and its vertical structure is held static.`,
+    );
+  }
+
+  parts.push(
+    'The epicyclic frequency comes from the rotation curve, 39.6 km/s/kpc against the 36 km/s/kpc measured locally: about 10% high.',
+  );
+  parts.push(
+    'Against an exact integration of this same potential the closed form is off by 5.4% of galactocentric radius at 250 million years, and 2.6% at 100 million.',
   );
 
   return parts.join(' ');
@@ -115,14 +162,18 @@ export class TimeControls {
   private readonly playButton: HTMLButtonElement;
   private readonly rateSelect: HTMLSelectElement;
   private readonly disclosure: HTMLDivElement;
+  private readonly deepToggle: HTMLInputElement;
   private years = 0;
   private playing = false;
+  private deep = false;
   private rate: number = RATES[1];
   private disclosureText = '';
+  private stats: TimeStats | undefined;
 
   constructor(
     parent: HTMLElement,
     private readonly onChange: (years: number) => void = () => {},
+    private readonly onDeepChange: (deep: boolean) => void = () => {},
   ) {
     this.element = document.createElement('div');
     this.element.setAttribute('data-testid', 'time-controls');
@@ -161,7 +212,7 @@ export class TimeControls {
     for (const rate of RATES) {
       const option = document.createElement('option');
       option.value = String(rate);
-      option.textContent = `${rate / 1000}k yr/s`;
+      option.textContent = this.rateLabel(String(rate));
       option.selected = rate === this.rate;
       this.rateSelect.appendChild(option);
     }
@@ -177,7 +228,16 @@ export class TimeControls {
     resetButton.addEventListener('click', () => this.reset());
 
     row.append(this.playButton, resetButton, this.rateSelect, this.readout);
-    this.element.append(row, this.slider);
+
+    this.deepToggle = document.createElement('input');
+    this.deepToggle.type = 'checkbox';
+    this.deepToggle.setAttribute('data-testid', 'time-deep');
+    this.deepToggle.addEventListener('change', () => this.setDeep(this.deepToggle.checked));
+    const deepLabel = document.createElement('label');
+    deepLabel.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer';
+    deepLabel.append(this.deepToggle, document.createTextNode('deep time (galactic orbits)'));
+
+    this.element.append(row, this.slider, deepLabel);
 
     this.disclosure = document.createElement('div');
     this.disclosure.setAttribute('data-testid', 'time-disclosure');
@@ -210,8 +270,20 @@ export class TimeControls {
     return this.rate;
   }
 
+  get isDeep(): boolean {
+    return this.deep;
+  }
+
+  get maxYears(): number {
+    return this.deep ? DEEP_MAX_YEARS : MAX_YEARS;
+  }
+
+  get minYears(): number {
+    return this.deep ? DEEP_MIN_YEARS : MIN_YEARS;
+  }
+
   setYears(years: number): void {
-    const next = clampYears(years);
+    const next = this.clamp(years);
     if (next === this.years) return;
     this.years = next;
     this.render();
@@ -221,6 +293,26 @@ export class TimeControls {
   setPlaying(playing: boolean): void {
     this.playing = playing;
     this.playButton.textContent = playing ? 'Pause' : 'Play';
+  }
+
+  setDeep(deep: boolean): void {
+    if (deep === this.deep) return;
+    this.deep = deep;
+    this.deepToggle.checked = deep;
+    this.slider.min = String(this.minYears);
+    this.slider.max = String(this.maxYears);
+    this.slider.step = deep ? String(1000 * DEEP_RATE_SCALE) : '1000';
+    for (const option of Array.from(this.rateSelect.options)) {
+      option.textContent = this.rateLabel(option.value);
+    }
+    const clamped = this.clamp(this.years);
+    if (clamped !== this.years) {
+      this.years = clamped;
+      this.onChange(clamped);
+    }
+    this.onDeepChange(deep);
+    if (this.stats) this.applyDisclosure(this.stats);
+    this.render();
   }
 
   setRate(rate: number): void {
@@ -235,25 +327,41 @@ export class TimeControls {
 
   advance(dt: number): void {
     if (!this.playing) return;
-    const next = this.years + this.rate * dt;
-    this.setYears(next);
-    if (this.years >= MAX_YEARS || this.years <= MIN_YEARS) this.setPlaying(false);
+    this.setYears(this.years + this.rate * (this.deep ? DEEP_RATE_SCALE : 1) * dt);
+    if (this.years >= this.maxYears || this.years <= this.minYears) this.setPlaying(false);
   }
 
   setStats(stats: TimeStats): void {
-    const text = timeDisclosure(stats);
-    if (text === this.disclosureText) return;
-    this.disclosureText = text;
-    this.disclosure.textContent = text;
+    this.stats = stats;
+    this.applyDisclosure(stats);
   }
 
   dispose(): void {
     this.element.remove();
   }
 
+  private clamp(years: number): number {
+    if (Number.isNaN(years)) return 0;
+    return this.deep
+      ? Math.min(Math.max(years, DEEP_MIN_YEARS), DEEP_MAX_YEARS)
+      : clampYears(years);
+  }
+
+  private rateLabel(value: string): string {
+    const rate = Number.parseFloat(value) * (this.deep ? DEEP_RATE_SCALE : 1);
+    return rate >= 1e6 ? `${rate / 1e6} Myr/s` : `${rate / 1000}k yr/s`;
+  }
+
+  private applyDisclosure(stats: TimeStats): void {
+    const text = this.deep ? deepTimeDisclosure(stats) : timeDisclosure(stats);
+    if (text === this.disclosureText) return;
+    this.disclosureText = text;
+    this.disclosure.textContent = text;
+  }
+
   private render(): void {
     this.slider.value = String(this.years);
-    this.readout.textContent = formatYears(this.years);
+    this.readout.textContent = this.deep ? formatDeepYears(this.years) : formatYears(this.years);
     this.disclosure.hidden = this.years === 0;
   }
 }

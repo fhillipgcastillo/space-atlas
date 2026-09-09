@@ -124,7 +124,13 @@ async function boot(): Promise<void> {
   // names index, so modeled points can never appear here.
   const labelObjects = new Map<string, NamedObject[]>();
   const rangeControls = new RangeControls(document.body);
-  const timeControls = new TimeControls(document.body, (years) => viewer.setTimeYears(years));
+  const timeControls = new TimeControls(
+    document.body,
+    (years) => viewer.setTimeYears(years),
+    (deep) => {
+      for (const renderer of renderers) renderer.setDeepTime(deep);
+    },
+  );
   // Walking the live tiles for flag fractions is only worth it while the clock
   // is off present day, and only a few times a second.
   const STATS_INTERVAL = 0.5;
@@ -200,8 +206,13 @@ async function boot(): Promise<void> {
     );
 
     // The clock is shared, so a time set through the viewer has to reach the UI.
-    timeControls.setYears(viewer.getTimeYears());
+    // The shared clock is capped at the linear range, so past it the control owns
+    // the time and writes it to the layers after their own update read the clock.
+    if (!timeControls.isDeep) timeControls.setYears(viewer.getTimeYears());
     timeControls.advance(dt);
+    if (timeControls.isDeep) {
+      for (const renderer of renderers) renderer.setTimeYears(timeControls.currentYears);
+    }
     sinceStats += dt;
     if (timeControls.currentYears === 0) sinceStats = STATS_INTERVAL;
     else if (sinceStats >= STATS_INTERVAL) {
