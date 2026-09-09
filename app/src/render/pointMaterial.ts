@@ -26,6 +26,8 @@ uniform float uParsecsPerUnit;
 uniform float uModeledDim;
 uniform float uShowModeled;
 uniform float uFluxWeight;
+uniform float uMaxOriginDistance;
+uniform float uMaxCameraDistance;
 
 in vec3 position;
 in float aColourIndex;
@@ -50,6 +52,18 @@ void main() {
 
   vec3 layerPosition = uBboxMin + position * uBboxExtent;
   vec4 viewPosition = modelViewMatrix * vec4(layerPosition, 1.0);
+
+  // Hard binary cutoff by design (spec 6.1): no fade band, no alpha ramp.
+  // uMaxOriginDistance is in this layer's units, matching layerPosition;
+  // uMaxCameraDistance is in the active layer's, matching viewPosition.
+  if (length(layerPosition) > uMaxOriginDistance ||
+      length(viewPosition.xyz) > uMaxCameraDistance) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    vColourIndex = 0.0;
+    vAlpha = 0.0;
+    return;
+  }
 
   float distancePc = max(length(viewPosition.xyz) * uParsecsPerUnit, 1e-6);
   float apparentMag = aAbsMag + 5.0 * (log2(distancePc) / log2(10.0)) - 5.0;
@@ -93,6 +107,12 @@ void main() {
 // Chosen on real hardware. Measured through a software rasterizer at 8.2M
 // points, 1000 ly: 800 gives mean luminance ~44 and ~83% lit pixels.
 const DEFAULT_ALPHA_SCALE = 8.0e2;
+
+/**
+ * Stands in for an unlimited cutoff. Infinity round-trips through a float
+ * uniform on paper but not on every driver; this is far past any layer range.
+ */
+export const NO_CUTOFF = 1e30;
 
 /** Modeled points emit this fraction of the light a measured point of the same magnitude would. */
 export const DEFAULT_MODELED_DIM = 0.45;
@@ -139,6 +159,8 @@ export function createPointMaterial(unitInParsecs: number): RawShaderMaterial {
       uModeledDim: { value: DEFAULT_MODELED_DIM },
       uShowModeled: { value: 1 },
       uFluxWeight: { value: 1 },
+      uMaxOriginDistance: { value: NO_CUTOFF },
+      uMaxCameraDistance: { value: NO_CUTOFF },
       uLayerOpacity: { value: 1 },
       uColourRamp: { value: ramp },
     },

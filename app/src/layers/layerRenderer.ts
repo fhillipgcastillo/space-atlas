@@ -1,5 +1,5 @@
 import { Group, type RawShaderMaterial } from 'three';
-import { createPointMaterial } from '../render/pointMaterial.js';
+import { createPointMaterial, NO_CUTOFF } from '../render/pointMaterial.js';
 import { FLAG_MODELED } from '../render/typeFlags.js';
 import type { DecodedTile } from '../tiles/format.js';
 import { TileManager } from '../tiles/tileManager.js';
@@ -17,6 +17,8 @@ export function opacityForBlend(role: 'primary' | 'secondary', blend: number): n
 export class LayerRenderer {
   readonly group = new Group();
   private opacity = 1;
+  private originCutoff = Number.POSITIVE_INFINITY;
+  private cameraCutoff = Number.POSITIVE_INFINITY;
   private readonly modeledCounts = new WeakMap<DecodedTile, number>();
 
   private constructor(
@@ -65,6 +67,20 @@ export class LayerRenderer {
     this.setUniform('uLayerOpacity', this.opacity);
   }
 
+  /**
+   * Both cutoffs arrive in the active layer's units. The camera one stays there
+   * because the shader measures it in view space; the origin shell converts to
+   * this layer's own units, which is what its positions and boxes are in.
+   */
+  setRangeCutoffs(fromEarth: number, fromCamera: number, active: LayerDef): void {
+    const origin = fromEarth / layerScaleFactor(this.def, active);
+    if (origin === this.originCutoff && fromCamera === this.cameraCutoff) return;
+    this.originCutoff = origin;
+    this.cameraCutoff = fromCamera;
+    this.setUniform('uMaxOriginDistance', Number.isFinite(origin) ? origin : NO_CUTOFF);
+    this.setUniform('uMaxCameraDistance', Number.isFinite(fromCamera) ? fromCamera : NO_CUTOFF);
+  }
+
   applyActiveLayer(active: LayerDef): void {
     this.group.scale.setScalar(layerScaleFactor(this.def, active));
     // The group scale sits inside modelViewMatrix, so the shader measures
@@ -76,7 +92,11 @@ export class LayerRenderer {
     // An invisible layer must not stream: it would compete for the eight
     // in-flight slots with the layer actually on screen.
     if (this.opacity <= 0) return;
-    this.manager.update(view);
+    this.manager.update({
+      ...view,
+      maxCameraDistance: this.cameraCutoff,
+      maxOriginDistance: this.originCutoff,
+    });
   }
 
   dispose(): void {

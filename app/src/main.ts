@@ -17,6 +17,7 @@ import type { TileManager } from './tiles/tileManager.js';
 import type { Tileset } from './tiles/tileset.js';
 import { HoverCard } from './ui/hoverCard.js';
 import { ModeledNotice } from './ui/modeledNotice.js';
+import { RangeControls } from './ui/rangeControls.js';
 import { ScaleHud } from './ui/scaleHud.js';
 import { SearchBox } from './ui/searchBox.js';
 
@@ -36,6 +37,7 @@ declare global {
       selection: () => LayerSelection;
       activeLayer: () => LayerDef;
       modeledNotice: ModeledNotice;
+      rangeControls: RangeControls;
     };
   }
 }
@@ -98,6 +100,7 @@ async function boot(): Promise<void> {
   const earth = new Anchor('Earth', new Vector3(0, 0, 0), document.body);
   const modeledNotice = new ModeledNotice(document.body);
   const scaleHud = new ScaleHud(document.body);
+  const rangeControls = new RangeControls(document.body);
   const modeledRenderers = renderers.filter((r) => r.def.key === 'milky-way');
 
   let selection = selectLayers(0, LAYERS);
@@ -126,6 +129,11 @@ async function boot(): Promise<void> {
 
     for (const renderer of renderers) {
       renderer.applyActiveLayer(active);
+      renderer.setRangeCutoffs(
+        rangeControls.current.fromEarth,
+        rangeControls.current.fromCamera,
+        active,
+      );
       if (renderer.def.key === selection.primary.key) {
         renderer.setOpacity(opacityForBlend('primary', selection.secondary ? selection.blend : 0));
       } else if (renderer.def.key === selection.secondary?.key) {
@@ -141,6 +149,7 @@ async function boot(): Promise<void> {
     }
 
     scaleHud.update(viewer.camera.position.length() * active.unitInMetres, active.key);
+    rangeControls.setUnit(active.unit);
 
     earth.update(viewer.camera, window.innerWidth, window.innerHeight);
 
@@ -149,6 +158,24 @@ async function boot(): Promise<void> {
       modeledNotice.setFraction(Math.max(...showing.map((r) => r.modeledFraction())));
     }
     modeledNotice.setVisible(showing.length > 0);
+  });
+
+  const flyTo = new FlyTo();
+  const searchEntries: SearchEntry[] = [];
+  const searchBox = new SearchBox(document.body, (entry) => {
+    const target = LAYERS.find((def) => def.key === entry.layerKey);
+    if (target) flyTo.start(entry, target, viewer.camera, active);
+  });
+  // Runs after the callback above, so the layer handover has already happened
+  // and this writes the position in the layer that won.
+  viewer.onFrame((dt) => flyTo.update(dt, viewer.camera, active));
+  // Walking the tiles for named positions costs tens of megabytes on the
+  // milky-way layer, so it is never awaited; each layer lands as it finishes.
+  void buildSearchIndex(LAYERS, (entries) => {
+    // Spreading instead would overflow the stack: the cosmic-web layer alone
+    // lands 423,578 names in one call.
+    for (const entry of entries) searchEntries.push(entry);
+    searchBox.setEntries(searchEntries);
   });
 
   viewer.start();
@@ -168,6 +195,7 @@ async function boot(): Promise<void> {
     selection: () => selection,
     activeLayer: () => active,
     modeledNotice,
+    rangeControls,
   };
   console.info(`layers loaded: ${renderers.map((r) => r.def.key).join(', ')}`);
 }
