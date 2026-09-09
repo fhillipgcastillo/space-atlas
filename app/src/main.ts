@@ -4,6 +4,7 @@ import { Anchor } from './interaction/anchors.js';
 import { HoverController } from './interaction/hover.js';
 import { LayerRenderer, opacityForBlend } from './layers/layerRenderer.js';
 import { LAYERS } from './layers/registry.js';
+import { loadIdentifiers, loadNames } from './layers/sidecars.js';
 import {
   rescalePosition,
   selectLayers,
@@ -32,22 +33,6 @@ declare global {
       activeLayer: () => LayerDef;
     };
   }
-}
-
-// A layer with no identifier sidecar answers 404; that is "no identifiers", not
-// a failure, so hover falls back to its generic label.
-async function loadNames(url: string): Promise<Map<number, string>> {
-  // Only small layers ship a name sidecar; a 404 means "no names", not an error.
-  const response = await fetch(`${url}/names.json`).catch(() => undefined);
-  if (!response?.ok) return new Map();
-  const raw = (await response.json()) as Record<string, string>;
-  return new Map(Object.entries(raw).map(([k, v]) => [Number(k), v]));
-}
-
-async function loadIdentifiers(url: string): Promise<BigUint64Array | undefined> {
-  const response = await fetch(`${url}/ids.bin`);
-  if (!response.ok) return undefined;
-  return new BigUint64Array(await response.arrayBuffer());
 }
 
 async function boot(): Promise<void> {
