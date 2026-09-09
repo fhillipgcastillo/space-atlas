@@ -1,6 +1,14 @@
-import { describe, expect, it } from 'vitest';
-import { DEFAULT_OPTIONS, maxNodesForBudget } from './tileManager.js';
-import type { TileNode } from './tileset.js';
+import { describe, expect, it, vi } from 'vitest';
+import { SlotPool } from '../render/pickIds.js';
+import { createPointMaterial } from '../render/pointMaterial.js';
+import type { DecodedTile } from './format.js';
+import {
+  DEFAULT_OPTIONS,
+  maxNodesForBudget,
+  TileManager,
+  type TileManagerOptions,
+} from './tileManager.js';
+import type { Tileset, TileNode } from './tileset.js';
 import { selectNodes, selectNodesWithFlux, type ViewState } from './traversal.js';
 
 describe('maxNodesForBudget', () => {
@@ -121,5 +129,122 @@ describe('flux weighting', () => {
 
     expect(total(near)).toBeCloseTo(900);
     expect(total(far)).toBeCloseTo(900);
+  });
+});
+
+const slotTileset: Tileset = {
+  formatVersion: 1,
+  layer: 'test',
+  unit: 'ly',
+  unitInMetres: 9460730472580800,
+  frame: 'galactic',
+  origin: 'Sol',
+  idPrefix: '',
+  pointCount: 1,
+  root: {
+    path: 'r',
+    boundingBox: { min: [0, 0, 0], max: [1, 1, 1] },
+    geometricError: 1,
+    pointCount: 1,
+    totalPointCount: 1,
+    children: [],
+  },
+};
+
+const oneTile = (points: number): DecodedTile => ({
+  pointCount: points,
+  bboxMin: new Float64Array([0, 0, 0]),
+  bboxMax: new Float64Array([1, 1, 1]),
+  positionQuantized: new Uint16Array(points * 3),
+  velocity: new Uint16Array(points * 3),
+  colorIndex: new Uint16Array(points),
+  absMag: new Uint16Array(points),
+  typeFlags: new Uint8Array(points),
+  localId: new Uint32Array(points),
+});
+
+const makeManager = (options?: Partial<TileManagerOptions>): TileManager => {
+  vi.stubGlobal('window', { devicePixelRatio: 1 });
+  return new TileManager('/data/test', slotTileset, createPointMaterial(1), {
+    ...DEFAULT_OPTIONS,
+    ...options,
+  });
+};
+
+/** The callback a finished fetch invokes, which is where a slot is assigned. */
+const deliver = (manager: TileManager, path: string, points = 1): void => {
+  (
+    manager as unknown as { loader: { onLoaded: (path: string, tile: DecodedTile) => void } }
+  ).loader.onLoaded(path, oneTile(points));
+};
+
+const slotOf = (manager: TileManager, path: string): number =>
+  manager.meshes.get(path)!.userData['tileSlot'] as number;
+
+describe('pick slots', () => {
+  it('never gives two managers the same slot', () => {
+    const stellar = makeManager();
+    const milkyWay = makeManager();
+    try {
+      deliver(stellar, 'r');
+      deliver(milkyWay, 'r');
+      deliver(stellar, 'r0');
+      deliver(milkyWay, 'r0');
+
+      const slots = [
+        slotOf(stellar, 'r'),
+        slotOf(stellar, 'r0'),
+        slotOf(milkyWay, 'r'),
+        slotOf(milkyWay, 'r0'),
+      ];
+      // The picking pass draws every visible layer into one target, so a slot
+      // shared by two managers resolves a hit against the wrong object.
+      expect(new Set(slots).size).toBe(slots.length);
+    } finally {
+      stellar.dispose();
+      milkyWay.dispose();
+    }
+  });
+
+  it('keeps a path on the slot it already holds', () => {
+    const manager = makeManager();
+    try {
+      deliver(manager, 'r');
+      const first = slotOf(manager, 'r');
+      deliver(manager, 'r');
+      expect([...manager.tilesBySlot.keys()]).toEqual([first]);
+    } finally {
+      manager.dispose();
+    }
+  });
+
+  it('returns evicted and disposed slots to the pool', () => {
+    const pool = new SlotPool();
+    const budget = 8 * 41;
+    const manager = new TileManager(
+      '/data/test',
+      slotTileset,
+      createPointMaterial(1),
+      { ...DEFAULT_OPTIONS, gpuByteBudget: budget },
+      pool,
+    );
+    vi.stubGlobal('window', { devicePixelRatio: 1 });
+
+    for (let i = 0; i < 40; i++) deliver(manager, `r${i}`, 8);
+    // The cache holds one tile at this budget, so every earlier slot must have
+    // come back or a long session runs out.
+    expect(pool.inUse).toBe(1);
+    expect(manager.tilesBySlot.size).toBe(1);
+
+    manager.dispose();
+    expect(pool.inUse).toBe(0);
+  });
+
+  it('reuses a released slot rather than climbing to the ceiling', () => {
+    const pool = new SlotPool();
+    const first = pool.acquire();
+    pool.release(first);
+    expect(pool.acquire()).toBe(first);
+    expect(pool.inUse).toBe(1);
   });
 });

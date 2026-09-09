@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { decodePickId, encodePickId, MAX_TILE_SLOTS, MAX_VERTICES_PER_TILE } from './pickIds.js';
+import {
+  decodePickId,
+  encodePickId,
+  MAX_TILE_SLOTS,
+  MAX_VERTICES_PER_TILE,
+  SlotPool,
+} from './pickIds.js';
 
 const toRgba = (id: number): Uint8Array =>
   new Uint8Array([id & 255, (id >>> 8) & 255, (id >>> 16) & 255, (id >>> 24) & 255]);
@@ -49,5 +55,44 @@ describe('pick identifiers', () => {
     const buffer = new Uint8Array(16);
     buffer.set(toRgba(encodePickId(3, 9) + 1), 8);
     expect(decodePickId(buffer, 8)).toEqual({ tileSlot: 3, vertexIndex: 9 });
+  });
+});
+
+describe('the slot pool', () => {
+  it('never hands the same slot to two holders', () => {
+    const pool = new SlotPool();
+    const slots = Array.from({ length: 100 }, () => pool.acquire());
+    expect(new Set(slots).size).toBe(100);
+    expect(pool.inUse).toBe(100);
+  });
+
+  it('hands out slots the encoding accepts', () => {
+    const pool = new SlotPool();
+    for (let i = 0; i < 64; i++) expect(() => encodePickId(pool.acquire(), 0)).not.toThrow();
+  });
+
+  it('recycles released slots oldest first', () => {
+    const pool = new SlotPool();
+    const [a, b, c] = [pool.acquire(), pool.acquire(), pool.acquire()];
+    pool.release(a!);
+    pool.release(b!);
+    expect(pool.acquire()).toBe(a);
+    expect(pool.acquire()).toBe(b);
+    expect(pool.acquire()).not.toBe(c);
+  });
+
+  it('ignores a double release rather than duplicating the slot', () => {
+    const pool = new SlotPool();
+    const slot = pool.acquire();
+    pool.release(slot);
+    pool.release(slot);
+    expect(pool.acquire()).toBe(slot);
+    expect(pool.acquire()).not.toBe(slot);
+  });
+
+  it('refuses to wrap once every slot is in use', () => {
+    const pool = new SlotPool();
+    for (let i = 0; i < MAX_TILE_SLOTS; i++) pool.acquire();
+    expect(() => pool.acquire()).toThrow(/exhausted/i);
   });
 });

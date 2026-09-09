@@ -1,5 +1,5 @@
 import { Group, type Points, RawShaderMaterial } from 'three';
-import { MAX_TILE_SLOTS } from '../render/pickIds.js';
+import { sharedSlotPool, type SlotPool } from '../render/pickIds.js';
 import { createTileMesh } from '../render/tileMesh.js';
 import { TileCache } from './cache.js';
 import type { DecodedTile } from './format.js';
@@ -50,23 +50,26 @@ export class TileManager {
   private readonly loader: TileLoader<DecodedTile>;
   private readonly slotByPath = new Map<string, number>();
   private readonly fluxWeights = new Map<string, number>();
-  private nextSlot = 0;
 
   constructor(
     private readonly baseUrl: string,
     private readonly tileset: Tileset,
     private readonly material: RawShaderMaterial,
     private readonly options: TileManagerOptions = DEFAULT_OPTIONS,
+    private readonly slotPool: SlotPool = sharedSlotPool,
   ) {
     this.cache = new TileCache<Points>(options.gpuByteBudget);
     this.cache.onEvict = (path, mesh) => {
       this.group.remove(mesh);
       this.meshes.delete(path);
       const slot = mesh.userData['tileSlot'];
+      // A reload registers the new mesh under this slot before the old one is
+      // evicted, so releasing unconditionally would free a live slot.
       if (typeof slot === 'number' && this.tilesBySlot.get(slot)?.mesh === mesh) {
         this.tilesBySlot.delete(slot);
+        this.slotByPath.delete(path);
+        this.slotPool.release(slot);
       }
-      this.slotByPath.delete(path);
       mesh.geometry.dispose();
       // createTileMesh clones the material per tile; the shared colour-ramp
       // texture it references is not owned by the clone and survives this.
@@ -150,15 +153,8 @@ export class TileManager {
   private slotFor(path: string): number {
     const existing = this.slotByPath.get(path);
     if (existing !== undefined) return existing;
-    // Round-robin, but skipping occupied slots: reusing a live slot would make
-    // every hover on the old tile report a point from the new one.
-    for (let i = 0; i < MAX_TILE_SLOTS; i++) {
-      const slot = (this.nextSlot + i) % MAX_TILE_SLOTS;
-      if (this.tilesBySlot.has(slot)) continue;
-      this.nextSlot = (slot + 1) % MAX_TILE_SLOTS;
-      this.slotByPath.set(path, slot);
-      return slot;
-    }
-    throw new Error(`tile manager: no free pick slot for ${path}`);
+    const slot = this.slotPool.acquire();
+    this.slotByPath.set(path, slot);
+    return slot;
   }
 }

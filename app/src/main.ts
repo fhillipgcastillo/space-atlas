@@ -36,6 +36,7 @@ declare global {
       hover: HoverController;
       identifiersReady: Promise<void>;
       layers: LayerRenderer[];
+      ownerForSlot: (slot: number) => LayerRenderer | undefined;
       labelObjects: Map<string, NamedObject[]>;
       selection: () => LayerSelection;
       activeLayer: () => LayerDef;
@@ -75,26 +76,38 @@ async function boot(): Promise<void> {
 
   const picking = new PickingPass(viewer.renderer, viewer.scene, viewer.camera);
   const card = new HoverCard(document.body);
+  // During a crossfade both layers paint into the one pick target, so a hit can
+  // belong to either; slots are unique across managers, so the owner is found.
+  const ownerForSlot = (slot: number): LayerRenderer | undefined =>
+    renderers.find((renderer) => renderer.manager.tilesBySlot.has(slot));
+  let hovered = primary;
   const hover = new HoverController(
     picking,
     card,
     {
       get unit() {
-        return primary.def.unit;
+        return hovered.def.unit;
       },
       get origin() {
-        return primary.tileset.origin;
+        return hovered.tileset.origin;
       },
-      tileForSlot: (slot) => primary.manager.tilesBySlot.get(slot),
+      // HoverController resolves the slot before it reads any of the fields
+      // around this one, so they describe the layer the hit came from.
+      tileForSlot: (slot) => {
+        const owner = ownerForSlot(slot);
+        if (!owner) return undefined;
+        hovered = owner;
+        return owner.manager.tilesBySlot.get(slot);
+      },
       identify: (tile, index) => {
         const local = tile.localId[index];
         if (local === undefined) return undefined;
-        const key = primary.def.key;
+        const key = hovered.def.key;
         const named = names.get(key)?.get(local);
         if (named !== undefined) return named;
         const id = identifiers.get(key)?.[local];
         if (id === undefined) return undefined;
-        const prefix = primary.tileset.idPrefix;
+        const prefix = hovered.tileset.idPrefix;
         return prefix ? `${prefix} ${id}` : String(id);
       },
     },
@@ -250,6 +263,7 @@ async function boot(): Promise<void> {
     hover,
     identifiersReady,
     layers: renderers,
+    ownerForSlot,
     labelObjects,
     selection: () => selection,
     activeLayer: () => active,
