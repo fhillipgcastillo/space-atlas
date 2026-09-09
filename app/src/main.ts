@@ -16,6 +16,7 @@ import type { TileManager } from './tiles/tileManager.js';
 import type { Tileset } from './tiles/tileset.js';
 import { HoverCard } from './ui/hoverCard.js';
 import { ModeledNotice } from './ui/modeledNotice.js';
+import { ScaleHud } from './ui/scaleHud.js';
 
 const METRES_PER_PARSEC = 3.0856775814913673e16;
 
@@ -94,6 +95,7 @@ async function boot(): Promise<void> {
 
   const earth = new Anchor('Earth', new Vector3(0, 0, 0), document.body);
   const modeledNotice = new ModeledNotice(document.body);
+  const scaleHud = new ScaleHud(document.body);
   const modeledRenderers = renderers.filter((r) => r.def.key === 'milky-way');
 
   let selection = selectLayers(0, LAYERS);
@@ -135,6 +137,8 @@ async function boot(): Promise<void> {
         fovRadians: (viewer.camera.fov * Math.PI) / 180,
       });
     }
+
+    scaleHud.update(viewer.camera.position.length() * active.unitInMetres, active.key);
 
     earth.update(viewer.camera, window.innerWidth, window.innerHeight);
 
