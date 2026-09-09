@@ -1,4 +1,5 @@
 import {
+  ACESFilmicToneMapping,
   Color,
   LinearSRGBColorSpace,
   type Material,
@@ -10,6 +11,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import {
@@ -70,9 +72,15 @@ export class Viewer {
       BLOOM_THRESHOLD,
     );
 
+    // The composer's targets are half-float, so additive accumulation above 1.0
+    // survives the chain; OutputPass is what maps it down instead of clipping.
+    this.renderer.toneMapping = ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1;
+
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
 
     window.addEventListener('resize', this.onResize);
     document.addEventListener('visibilitychange', this.onVisibilityChange);
@@ -116,6 +124,14 @@ export class Viewer {
 
   setBloomEnabled(enabled: boolean): void {
     this.bloom.enabled = enabled;
+  }
+
+  getExposure(): number {
+    return this.renderer.toneMappingExposure;
+  }
+
+  setExposure(value: number): void {
+    this.renderer.toneMappingExposure = Math.max(value, 0);
   }
 
   getAlphaScale(): number {
