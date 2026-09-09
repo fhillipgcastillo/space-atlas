@@ -548,6 +548,8 @@ git commit -m "fix(app): lower the brightness floors so flux compensation can ac
 
 **Files:** modify `e2e/render.spec.ts`
 
+**Meter with auto-exposure disabled.** Adaptive exposure brightens a dim frame toward a fixed target, so mean luminance at a fixed camera now measures the exposure controller's setpoint more than the field's actual density — a dimming regression would be partly absorbed before it ever reached the bound. Measured evidence: 120,000 ly used to be the dimmest sample and now reads 15.63, barely below the 50,000 ly reading. Call `setAutoExposure(false)` and pin a known exposure before any absolute-luminance assertion, or the threshold measures the controller rather than the scene.
+
 - [ ] **Step 0: Re-validate the inherited luminance thresholds**
 
 `e2e/render.spec.ts` asserts `mean > 1.5` and `litFraction > 0.03` at 50,000 ly. Those constants were measured against the renderer as it stood **before** flux compensation and before the floors moved, and the agent that wrote them flagged the exposure explicitly. Task 2 raised brightness, which makes them safer; Task 4b lowers the floors, which pushes the other way.
