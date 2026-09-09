@@ -23,6 +23,15 @@ export const LAYERS: LayerDef[] = [
     origin: 'Sol',
   },
   {
+    key: 'milky-way',
+    url: '/data/milky-way',
+    unit: 'ly',
+    unitInMetres: LY_IN_METRES,
+    minRadius: 3000,
+    maxRadius: 400000,
+    origin: 'Sol',
+  },
+  {
     key: 'local-universe',
     url: '/data/local-universe',
     unit: 'Mly',

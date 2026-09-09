@@ -97,9 +97,21 @@ possible: no single coordinate space ever has to span 27 orders of magnitude.
 |---|---|---|---|---|
 | L0 Solar System | 0 – 0.01 ly | AU | Sun | Keplerian elements |
 | L1 Stellar Neighborhood | 0.01 – 5,000 ly | ly | Sun | Gaia DR3 (bulk of the 10M+) |
-| L2 Milky Way | 5,000 – 300,000 ly | ly | Galactic Center | Clusters, nebulae, black holes + **modeled** stellar population |
+| L2 Milky Way | 3,000 – 400,000 ly | ly | Sol | Clusters, black holes + **modeled** stellar population |
 | L3 Local Universe | 0.3 – 300 Mly | Mly | Milky Way | Cosmicflows-4, OpenNGC galaxies |
 | L4 Cosmic Web | 300 Mly – 14 Gly | Mly (comoving) | Milky Way | SDSS LSS |
+
+Every layer inside the extragalactic scale shares the **heliocentric** origin.
+The camera handover rescales the radius and never translates, so a layer with a
+different origin would teleport the camera at the boundary. The Galactic Centre
+therefore appears in the Milky Way layer as a real object about 26,670 ly away
+toward galactic longitude 0, rather than as that layer's centre — which is also
+the more honest picture, since we are not at the centre.
+
+Nebulae are absent from L2 because no catalogue of them carries distances. NGC
+2000.0 has names, types and magnitudes but nothing that places an object in
+three dimensions, and inventing those distances is precisely what section 3.4
+forbids. They return when a distance-bearing source is found.
 
 Adjacent layers overlap by roughly half a decade of distance; the crossfade
 happens inside the overlap band so neither layer ever pops in against emptiness.

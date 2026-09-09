@@ -49,6 +49,16 @@ L1_STELLAR_NEIGHBOURHOOD = LayerConfig(
     max_points_per_tile=65536,
 )
 
+L2_MILKY_WAY = LayerConfig(
+    key="milky-way",
+    unit="ly",
+    unit_in_metres=LY_IN_METRES,
+    min_radius=3000.0,
+    max_radius=400000.0,
+    origin="Sol",
+    max_points_per_tile=65536,
+)
+
 L3_LOCAL_UNIVERSE = LayerConfig(
     key="local-universe",
     unit="Mly",
@@ -61,5 +71,5 @@ L3_LOCAL_UNIVERSE = LayerConfig(
 
 LAYERS: dict[str, LayerConfig] = {
     layer.key: layer
-    for layer in (L0_SOLAR_SYSTEM, L1_STELLAR_NEIGHBOURHOOD, L3_LOCAL_UNIVERSE)
+    for layer in (L0_SOLAR_SYSTEM, L1_STELLAR_NEIGHBOURHOOD, L2_MILKY_WAY, L3_LOCAL_UNIVERSE)
 }

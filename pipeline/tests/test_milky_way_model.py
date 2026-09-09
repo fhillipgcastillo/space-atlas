@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from universe_pipeline.config import LY_IN_METRES, LayerConfig
+from universe_pipeline.config import L2_MILKY_WAY
 from universe_pipeline.records import (
     CLASS_STAR,
     FLAG_MODELED,
@@ -12,17 +12,6 @@ from universe_pipeline.records import (
 from universe_pipeline.sources.milky_way_model import (
     SUN_GALACTOCENTRIC_RADIUS_LY,
     build_modeled_population,
-)
-
-# Task 2 adds this layer to config.py; until it lands the tests build it here.
-L2_MILKY_WAY = LayerConfig(
-    key="milky-way",
-    unit="ly",
-    unit_in_metres=LY_IN_METRES,
-    min_radius=3000.0,
-    max_radius=400000.0,
-    origin="Sol",
-    max_points_per_tile=65536,
 )
 
 

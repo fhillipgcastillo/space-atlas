@@ -40,3 +40,19 @@ def test_unit_scales_are_consistent_with_each_other() -> None:
 def test_every_layer_declares_a_tile_budget_the_pick_encoding_can_address() -> None:
     for layer in LAYERS.values():
         assert 0 < layer.max_points_per_tile <= (1 << 20)
+
+
+def test_milky_way_layer_overlaps_both_neighbours() -> None:
+    from universe_pipeline.config import L2_MILKY_WAY
+
+    assert L2_MILKY_WAY.min_radius < L1_STELLAR_NEIGHBOURHOOD.max_radius
+    outer_start = L3_LOCAL_UNIVERSE.min_radius * L3_LOCAL_UNIVERSE.unit_in_metres
+    assert L2_MILKY_WAY.max_radius * L2_MILKY_WAY.unit_in_metres > outer_start
+
+
+def test_every_layer_inside_the_extragalactic_scale_is_heliocentric() -> None:
+    # The camera handover rescales the radius and never translates, so a layer
+    # with a different origin would teleport the camera at the boundary.
+    from universe_pipeline.config import L2_MILKY_WAY
+
+    assert L2_MILKY_WAY.origin == "Sol"
