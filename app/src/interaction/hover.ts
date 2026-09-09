@@ -1,4 +1,4 @@
-import type { Points } from 'three';
+import type { Points, RawShaderMaterial } from 'three';
 import type { PickingPass } from '../render/picking.js';
 import { decodeFloat16, dequantizePosition, type DecodedTile } from '../tiles/format.js';
 import { describeType, hasMeasuredMagnitude, hasRadialVelocity } from '../render/typeFlags.js';
@@ -38,6 +38,29 @@ export function hoverCardText(f: HoverFields): string {
 }
 
 const scratch = new Float64Array(3);
+
+/** Distance from the layer origin to a point after `timeYears` of its measured drift. */
+export function distanceAtTime(
+  tile: DecodedTile,
+  index: number,
+  timeYears: number,
+  velocityScale: number,
+): number {
+  dequantizePosition(tile, index, scratch);
+  let sum = 0;
+  for (let axis = 0; axis < 3; axis++) {
+    const velocity = decodeFloat16(tile.velocity[index * 3 + axis] ?? 0);
+    const coord = scratch[axis]! + velocity * timeYears * velocityScale;
+    sum += coord * coord;
+  }
+  return Math.sqrt(sum);
+}
+
+function uniformValue(mesh: Points, name: string): number {
+  const uniforms = (mesh.material as RawShaderMaterial).uniforms;
+  const value = uniforms?.[name]?.value;
+  return typeof value === 'number' ? value : 0;
+}
 
 export class HoverController {
   private lastMove = 0;
@@ -81,11 +104,17 @@ export class HoverController {
       return false;
     }
 
-    dequantizePosition(entry.tile, hit.vertexIndex, scratch);
-    const distance = Math.hypot(scratch[0]!, scratch[1]!, scratch[2]!);
-
     const { tile } = entry;
     const index = hit.vertexIndex;
+    // Read from the mesh that was drawn rather than the clock, so the card
+    // cannot report a distance for a frame the pick pass did not see.
+    const distance = distanceAtTime(
+      tile,
+      index,
+      uniformValue(entry.mesh, 'uTimeYears'),
+      uniformValue(entry.mesh, 'uVelocityScale'),
+    );
+
     const flags = tile.typeFlags[index] ?? 0;
     const absMag = decodeFloat16(tile.absMag[index] ?? 0);
     const speed = Math.hypot(

@@ -7,7 +7,8 @@ import {
   FLAG_NOMINAL_MAGNITUDE,
   FLAG_NO_RADIAL_VELOCITY,
 } from '../render/typeFlags.js';
-import { hoverCardText } from './hover.js';
+import { decodeFloat16, type DecodedTile } from '../tiles/format.js';
+import { distanceAtTime, hoverCardText } from './hover.js';
 
 const base = {
   label: undefined as string | undefined,
@@ -71,5 +72,62 @@ describe('hoverCardText', () => {
     expect(lines[2]).toContain('from Sol');
     expect(lines[3]).toContain('absolute magnitude');
     expect(lines[4]).toContain('km/s');
+  });
+});
+
+// float16 bits for 100 km/s; asserted below so the fixture cannot drift.
+const HALF_100 = 22080;
+// 100 km/s for 1000 years is 3.15576e15 m, and a light year is 9.4607304725808e15 m.
+const DRIFT_LY = 0.3335640951981521;
+
+function tileWith(x: number, velocityBits: number, axis: 0 | 1 = 0): DecodedTile {
+  const velocity = new Uint16Array(3);
+  velocity[axis] = velocityBits;
+  // The box spans the whole quantised range, so a stored value is its own coordinate.
+  return {
+    pointCount: 1,
+    bboxMin: new Float64Array([0, 0, 0]),
+    bboxMax: new Float64Array([65535, 65535, 65535]),
+    positionQuantized: new Uint16Array([x, 0, 0]),
+    velocity,
+    colorIndex: new Uint16Array([0]),
+    absMag: new Uint16Array([0]),
+    typeFlags: new Uint8Array([CLASS_STAR]),
+    localId: new Uint32Array([0]),
+  };
+}
+
+const LY_PER_YEAR_PER_KMS = 3.3356409519815205e-6;
+
+describe('distanceAtTime', () => {
+  it('reads the fixture velocity as 100 km/s', () => {
+    expect(decodeFloat16(HALF_100)).toBe(100);
+  });
+
+  it('reports the present-day distance at present day', () => {
+    expect(distanceAtTime(tileWith(10, HALF_100), 0, 0, LY_PER_YEAR_PER_KMS)).toBeCloseTo(10, 12);
+  });
+
+  it('moves the point by its measured velocity', () => {
+    const distance = distanceAtTime(tileWith(10, HALF_100), 0, 1000, LY_PER_YEAR_PER_KMS);
+    expect(distance).toBeCloseTo(10 + DRIFT_LY, 9);
+  });
+
+  it('runs the clock backwards as well as forwards', () => {
+    const distance = distanceAtTime(tileWith(10, HALF_100), 0, -1000, LY_PER_YEAR_PER_KMS);
+    expect(distance).toBeCloseTo(10 - DRIFT_LY, 9);
+  });
+
+  it('adds drift as a vector, not to the distance', () => {
+    // Sideways motion barely changes the range: 10 ly out with the drift at a
+    // right angle gives hypot(10, 0.3336) = 10.00556, where adding the drift to
+    // the distance would give 10.3336.
+    const distance = distanceAtTime(tileWith(10, HALF_100, 1), 0, 1000, LY_PER_YEAR_PER_KMS);
+    expect(distance).toBeCloseTo(Math.hypot(10, DRIFT_LY), 12);
+    expect(distance).toBeLessThan(10.006);
+  });
+
+  it('leaves a zero-velocity point exactly where it is', () => {
+    expect(distanceAtTime(tileWith(10, 0), 0, 1_000_000, LY_PER_YEAR_PER_KMS)).toBe(10);
   });
 });
