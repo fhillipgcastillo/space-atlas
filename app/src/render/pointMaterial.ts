@@ -228,24 +228,44 @@ export const NO_CUTOFF = 1e30;
 /** Modeled points emit this fraction of the light a measured point of the same magnitude would. */
 export const DEFAULT_MODELED_DIM = 0.45;
 
-let alphaScale = DEFAULT_ALPHA_SCALE;
+export const DEFAULT_SIZE_SCALE = 500;
+export const DEFAULT_MIN_SIZE = 1;
+export const DEFAULT_MAX_SIZE = 8;
+
+export type PointUniformName = 'uAlphaScale' | 'uSizeScale' | 'uMinSize' | 'uMaxSize';
+
+const pointUniforms: Record<PointUniformName, number> = {
+  uAlphaScale: DEFAULT_ALPHA_SCALE,
+  uSizeScale: DEFAULT_SIZE_SCALE,
+  uMinSize: DEFAULT_MIN_SIZE,
+  uMaxSize: DEFAULT_MAX_SIZE,
+};
+
 // Materials handed out by createPointMaterial. tileMesh clones one of these per
-// tile, so changing the scale here only reaches tiles streamed in afterwards;
-// Viewer.setAlphaScale updates the live clones as well. Held weakly so the
+// tile, so changing a value here only reaches tiles streamed in afterwards;
+// Viewer.setPointUniform updates the live clones as well. Held weakly so the
 // registry cannot pin a material the caller has disposed.
 const baseMaterials = new Set<WeakRef<RawShaderMaterial>>();
 
+export function getPointUniform(name: PointUniformName): number {
+  return pointUniforms[name];
+}
+
+export function setPointUniform(name: PointUniformName, value: number): void {
+  pointUniforms[name] = value;
+  for (const ref of baseMaterials) {
+    const material = ref.deref();
+    if (material) material.uniforms[name]!.value = value;
+    else baseMaterials.delete(ref);
+  }
+}
+
 export function getAlphaScale(): number {
-  return alphaScale;
+  return getPointUniform('uAlphaScale');
 }
 
 export function setAlphaScale(value: number): void {
-  alphaScale = value;
-  for (const ref of baseMaterials) {
-    const material = ref.deref();
-    if (material) material.uniforms['uAlphaScale']!.value = value;
-    else baseMaterials.delete(ref);
-  }
+  setPointUniform('uAlphaScale', value);
 }
 
 export function createPointMaterial(unitInParsecs: number): RawShaderMaterial {
@@ -262,10 +282,10 @@ export function createPointMaterial(unitInParsecs: number): RawShaderMaterial {
       uBboxMin: { value: new Vector3() },
       uBboxExtent: { value: new Vector3(1, 1, 1) },
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
-      uSizeScale: { value: 500.0 },
-      uMinSize: { value: 1.0 },
-      uMaxSize: { value: 8.0 },
-      uAlphaScale: { value: alphaScale },
+      uSizeScale: { value: pointUniforms.uSizeScale },
+      uMinSize: { value: pointUniforms.uMinSize },
+      uMaxSize: { value: pointUniforms.uMaxSize },
+      uAlphaScale: { value: pointUniforms.uAlphaScale },
       uParsecsPerUnit: { value: unitInParsecs },
       uModeledDim: { value: DEFAULT_MODELED_DIM },
       uShowModeled: { value: 1 },

@@ -17,8 +17,9 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ExposureMeter, adaptExposure, exposureForLuminance } from '../render/autoExposure.js';
 import {
-  getAlphaScale as getPointAlphaScale,
-  setAlphaScale as setPointAlphaScale,
+  getPointUniform,
+  setPointUniform,
+  type PointUniformName,
 } from '../render/pointMaterial.js';
 import { getTimeYears, setTimeYears } from '../render/timeline.js';
 import { FlyControls } from './flyControls.js';
@@ -163,21 +164,35 @@ export class Viewer {
   }
 
   getAlphaScale(): number {
-    return getPointAlphaScale();
+    return getPointUniform('uAlphaScale');
   }
 
   setAlphaScale(value: number): void {
-    setPointAlphaScale(value);
-    // createTileMesh clones the material per tile, so already-streamed tiles
-    // hold their own copy of the uniform and have to be walked.
-    this.scene.traverse((object) => {
-      const material = (object as { material?: Material | Material[] }).material;
-      if (!material) return;
-      for (const entry of Array.isArray(material) ? material : [material]) {
-        const uniform = (entry as ShaderMaterial).uniforms?.['uAlphaScale'];
-        if (uniform) uniform.value = value;
-      }
-    });
+    this.setPointUniform('uAlphaScale', value);
+  }
+
+  getSizeScale(): number {
+    return getPointUniform('uSizeScale');
+  }
+
+  setSizeScale(value: number): void {
+    this.setPointUniform('uSizeScale', Math.max(value, 0));
+  }
+
+  getMinSize(): number {
+    return getPointUniform('uMinSize');
+  }
+
+  setMinSize(value: number): void {
+    this.setPointUniform('uMinSize', Math.max(value, 0));
+  }
+
+  getMaxSize(): number {
+    return getPointUniform('uMaxSize');
+  }
+
+  setMaxSize(value: number): void {
+    this.setPointUniform('uMaxSize', Math.max(value, 0));
   }
 
   getTimeYears(): number {
@@ -209,6 +224,20 @@ export class Viewer {
     this.composer.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
+  }
+
+  // createTileMesh clones the material per tile, so already-streamed tiles hold
+  // their own copy of the uniform and have to be walked.
+  private setPointUniform(name: PointUniformName, value: number): void {
+    setPointUniform(name, value);
+    this.scene.traverse((object) => {
+      const material = (object as { material?: Material | Material[] }).material;
+      if (!material) return;
+      for (const entry of Array.isArray(material) ? material : [material]) {
+        const uniform = (entry as ShaderMaterial).uniforms?.[name];
+        if (uniform) uniform.value = value;
+      }
+    });
   }
 
   private readonly tick = (): void => {

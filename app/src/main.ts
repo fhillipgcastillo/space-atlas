@@ -21,6 +21,7 @@ import { ModeledNotice } from './ui/modeledNotice.js';
 import { RangeControls } from './ui/rangeControls.js';
 import { ScaleHud } from './ui/scaleHud.js';
 import { SearchBox } from './ui/searchBox.js';
+import { createControlPanel, type ControlPanel } from './ui/controlPanel.js';
 import { sampleTimeStats, TimeControls } from './ui/timeControls.js';
 
 const METRES_PER_PARSEC = 3.0856775814913673e16;
@@ -43,6 +44,7 @@ declare global {
       modeledNotice: ModeledNotice;
       rangeControls: RangeControls;
       timeControls: TimeControls;
+      controlPanel: ControlPanel;
     };
   }
 }
@@ -260,6 +262,23 @@ async function boot(): Promise<void> {
     searchBox.setEntries(searchEntries);
   });
 
+  // Built last: the hamburger hides every other panel, so they all have to
+  // exist before it takes their elements.
+  const controlPanel = createControlPanel(document.body, {
+    viewer,
+    layers: renderers,
+    labels: labelLayer,
+    chrome: [
+      scaleHud.element,
+      rangeControls.element,
+      timeControls.element,
+      searchBox.root,
+      modeledNotice.element,
+      earth.element,
+    ],
+    toggleKey: 'Escape',
+  });
+
   viewer.start();
   window.__universeMap = {
     viewer,
@@ -281,6 +300,7 @@ async function boot(): Promise<void> {
     modeledNotice,
     rangeControls,
     timeControls,
+    controlPanel,
   };
   console.info(`layers loaded: ${renderers.map((r) => r.def.key).join(', ')}`);
 }

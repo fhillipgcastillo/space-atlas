@@ -3,7 +3,7 @@ import { search, type SearchEntry } from '../interaction/search.js';
 const MAX_RESULTS = 8;
 
 export class SearchBox {
-  private readonly root: HTMLDivElement;
+  readonly root: HTMLDivElement;
   private readonly input: HTMLInputElement;
   private readonly list: HTMLDivElement;
   private entries: SearchEntry[] = [];

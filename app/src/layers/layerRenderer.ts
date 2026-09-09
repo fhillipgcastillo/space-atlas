@@ -4,6 +4,7 @@ import {
   DEEP_MODEL_HUBBLE,
   DEEP_MODEL_LINEAR,
   DEEP_MODEL_ORBIT,
+  DEFAULT_MODELED_DIM,
   NO_CUTOFF,
 } from '../render/pointMaterial.js';
 import { getTimeYears, velocityScaleForLayer } from '../render/timeline.js';
@@ -40,6 +41,8 @@ export class LayerRenderer {
   private cameraCutoff = Number.POSITIVE_INFINITY;
   private timeYears = 0;
   private deepTime = false;
+  private modeledDim = DEFAULT_MODELED_DIM;
+  private showModeled = true;
   private readonly modeledCounts = new WeakMap<DecodedTile, number>();
 
   private constructor(
@@ -76,11 +79,21 @@ export class LayerRenderer {
     this.setUniform('uDeepTime', on ? 1 : 0);
   }
 
+  getModeledDim(): number {
+    return this.modeledDim;
+  }
+
   setModeledDim(value: number): void {
-    this.setUniform('uModeledDim', Math.min(Math.max(value, 0), 1));
+    this.modeledDim = Math.min(Math.max(value, 0), 1);
+    this.setUniform('uModeledDim', this.modeledDim);
+  }
+
+  getShowModeled(): boolean {
+    return this.showModeled;
   }
 
   setShowModeled(show: boolean): void {
+    this.showModeled = show;
     this.setUniform('uShowModeled', show ? 1 : 0);
   }
 

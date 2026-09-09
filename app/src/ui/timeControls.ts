@@ -156,7 +156,7 @@ const BUTTON_CSS = [
 ].join(';');
 
 export class TimeControls {
-  private readonly element: HTMLDivElement;
+  readonly element: HTMLDivElement;
   private readonly slider: HTMLInputElement;
   private readonly readout: HTMLSpanElement;
   private readonly playButton: HTMLButtonElement;

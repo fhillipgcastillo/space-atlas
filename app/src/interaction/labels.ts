@@ -101,12 +101,27 @@ export function buildCandidates(
 
 export class LabelLayer {
   private readonly elements: HTMLDivElement[] = [];
+  private visible = true;
 
   constructor(private readonly parent: HTMLElement) {}
+
+  isVisible(): boolean {
+    return this.visible;
+  }
+
+  setVisible(visible: boolean): void {
+    if (visible === this.visible) return;
+    this.visible = visible;
+    if (!visible) this.hideAll();
+  }
 
   // Elements are pooled and reused. Rebuilding dozens of nodes every frame is a
   // real cost at the frame rates software rendering reaches.
   update(placed: readonly LabelCandidate[]): void {
+    if (!this.visible) {
+      this.hideAll();
+      return;
+    }
     for (let i = 0; i < placed.length; i++) {
       const label = placed[i]!;
       const element = this.elements[i] ?? this.create();
@@ -122,6 +137,10 @@ export class LabelLayer {
   dispose(): void {
     for (const element of this.elements) element.remove();
     this.elements.length = 0;
+  }
+
+  private hideAll(): void {
+    for (const element of this.elements) element.hidden = true;
   }
 
   private create(): HTMLDivElement {

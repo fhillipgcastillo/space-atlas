@@ -7,7 +7,7 @@ export function modeledNoticeText(fraction: number): string {
 }
 
 export class ModeledNotice {
-  private readonly element: HTMLDivElement;
+  readonly element: HTMLDivElement;
   private fraction = -1;
 
   constructor(parent: HTMLElement) {

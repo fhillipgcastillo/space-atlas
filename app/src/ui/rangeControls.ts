@@ -41,7 +41,7 @@ export function modeLabel(mode: RangeMode): string {
 const MODES: RangeMode[] = ['earth', 'camera'];
 
 export class RangeControls {
-  private readonly element: HTMLDivElement;
+  readonly element: HTMLDivElement;
   private readonly input: HTMLInputElement;
   private readonly unitElement: HTMLSpanElement;
   private readonly summary: HTMLDivElement;

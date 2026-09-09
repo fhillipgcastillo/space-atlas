@@ -37,7 +37,7 @@ export function layerDisplayName(key: string): string {
 }
 
 export class ScaleHud {
-  private readonly element: HTMLDivElement;
+  readonly element: HTMLDivElement;
   private readonly distanceElement: HTMLSpanElement;
   private readonly layerElement: HTMLSpanElement;
   private last = '';

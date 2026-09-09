@@ -24,7 +24,7 @@ export function projectToScreen(
 }
 
 export class Anchor {
-  private readonly element: HTMLDivElement;
+  readonly element: HTMLDivElement;
 
   constructor(
     label: string,

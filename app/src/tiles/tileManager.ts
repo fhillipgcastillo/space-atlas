@@ -50,6 +50,8 @@ export class TileManager {
   private readonly loader: TileLoader<DecodedTile>;
   private readonly slotByPath = new Map<string, number>();
   private readonly fluxWeights = new Map<string, number>();
+  private maxVisibleNodes: number;
+  private errorThreshold: number;
 
   constructor(
     private readonly baseUrl: string,
@@ -58,6 +60,8 @@ export class TileManager {
     private readonly options: TileManagerOptions = DEFAULT_OPTIONS,
     private readonly slotPool: SlotPool = sharedSlotPool,
   ) {
+    this.maxVisibleNodes = options.maxVisibleNodes;
+    this.errorThreshold = options.screenSpaceErrorThreshold;
     this.cache = new TileCache<Points>(options.gpuByteBudget);
     this.cache.onEvict = (path, mesh) => {
       this.group.remove(mesh);
@@ -106,12 +110,35 @@ export class TileManager {
     return this.loader.inFlightCount;
   }
 
+  /** The byte budget is fixed at construction: TileCache takes it as a constructor arg. */
+  get gpuByteBudget(): number {
+    return this.options.gpuByteBudget;
+  }
+
+  getMaxVisibleNodes(): number {
+    return this.maxVisibleNodes;
+  }
+
+  // Both selection knobs are read fresh on every update, and tiles dropped from
+  // the selection stay cached and hidden, so neither can strand a loaded tile.
+  setMaxVisibleNodes(value: number): void {
+    this.maxVisibleNodes = Math.max(1, Math.floor(value));
+  }
+
+  getScreenSpaceErrorThreshold(): number {
+    return this.errorThreshold;
+  }
+
+  setScreenSpaceErrorThreshold(value: number): void {
+    this.errorThreshold = Math.max(value, 0);
+  }
+
   update(view: ViewState): void {
     const selection = selectNodesWithFlux(
       this.tileset.root,
       view,
-      this.options.screenSpaceErrorThreshold,
-      this.options.maxVisibleNodes,
+      this.errorThreshold,
+      this.maxVisibleNodes,
     );
 
     this.fluxWeights.clear();
