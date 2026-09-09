@@ -41,6 +41,20 @@ fluxWeight(node)  = represented(node) / node.pointCount
 
 A fully-refined node weighs 1. A leaf drawn alone weighs `totalPointCount / pointCount`. Partial selection falls out correctly.
 
+## Correction after Task 2: the seams are density, not flux
+
+Task 2 landed the flux weight, verified it correct — the sum of `pointCount × fluxWeight` equals the root's 4,002,013 at every distance — and measured **no change to the seams at all**. Radial profiles at 350,000 ly match to four decimals; the bright square at 120,000 ly has an in/out ratio of 8.317 before and 8.340 after.
+
+**The premise above was wrong.** "Dropping 3.6M points to 590k loses 84% of the light" was measured on the *stellar* layer. The milky-way tileset has 269 nodes against a 199-node budget, so 86% of its points are already drawn at 10k–120k ly and the median flux weight is exactly 1.0.
+
+Where headroom exists, the clamps absorb it. At 350,000 ly a 63% coverage should brighten the frame 1.58×; measured **1.0005×**, three orders of magnitude short. Every point is pinned at `clamp(brightness * uAlphaScale, 0.02, 1.0)` and `clamp(… , 1.0, 8.0)`, where multiplying brightness by 12 changes nothing.
+
+So a seam is a **point-density** discontinuity. With alpha floored, a pixel's brightness is simply how many drawn points land on it, and tiles at different depths deposit different densities. No per-tile scalar can compensate that while the floor holds.
+
+**Those floors are a workaround for the absence of HDR.** They exist so distant points stay visible in a pipeline that clips at 1.0 — an earlier experiment removing the floor erased the galaxy at 350,000 ly. Once tone mapping carries the range, the floors are no longer needed and are actively harmful: they are what stops the flux weight from acting.
+
+That makes Tasks 3 and 4 a precondition rather than a parallel fix, and adds Task 4b below. The flux weight stays: it is correct, and it is what makes removing the floors safe.
+
 ## File Structure
 
 | File | Responsibility |
@@ -485,6 +499,42 @@ Then check the two things that would make this worse than fixed exposure:
 npm run typecheck && npm run lint && npx vitest run
 git add app/src/render/autoExposure.ts app/src/render/autoExposure.test.ts app/src/core/viewer.ts
 git commit -m "feat(app): adapt exposure to scene luminance"
+```
+
+---
+
+### Task 4b: Remove the brightness floors now that exposure carries the range
+
+**Files:** modify `app/src/render/pointMaterial.ts`
+
+The `0.02` alpha floor and `1.0` point-size floor exist because the pipeline clipped at white and distant points would otherwise vanish. With tone mapping and adaptive exposure in place, they are no longer load-bearing — and they are what pins every distant point to the same brightness regardless of how many points it stands in for, which is what makes LOD boundaries visible.
+
+**This task only makes sense if Tasks 3 and 4 succeeded.** If exposure is not adapting, lowering the floors will erase the distant galaxy exactly as the earlier experiment did. Verify auto-exposure is working before starting, and say so if it is not.
+
+- [ ] **Step 1: Record the baseline**
+
+Measure mean luminance, lit fraction and saturated fraction at 30,000 / 120,000 / 350,000 ly and 1 Mly, and capture the seam metrics: the radial luminance profile at 350,000 ly in 30 px bins, and the in-box/out-of-box ratio for the bright square at 120,000 ly (x 530–1020, y 160–580). Those two numbers are how you will know whether this worked.
+
+- [ ] **Step 2: Sweep the floors downward**
+
+Try alpha floors of 0.02 (current), 0.005, 0.001 and 0.0, and size floors of 1.0 and 0.0, and report the seam metrics and luminance for each combination. Expect a tension: lower floors let the flux weight act, but may make the far view too dim for exposure to recover.
+
+- [ ] **Step 3: Choose values by evidence**
+
+Pick the combination where the 120,000 ly box ratio moves meaningfully toward 1.0 and the 350,000 ly radial profile loses its steps, **without** the galaxy disappearing at 1 Mly. Report the numbers behind the choice.
+
+If no combination achieves both, say so plainly and report the trade-off curve. A partial improvement honestly described is a fine outcome; a claim that the seams are gone when they are merely dimmer is not.
+
+- [ ] **Step 4: Confirm the honesty guarantee still holds**
+
+Measure mean luminance at 50,000 ly with `uModeledDim` at 1.0 and 0.45 under the new floors and report the ratio. Modeled points must remain visibly dimmer than measured ones.
+
+- [ ] **Step 5: Commit**
+
+```bash
+npm run typecheck && npm run lint && npx vitest run
+git add app/src/render/pointMaterial.ts
+git commit -m "fix(app): lower the brightness floors so flux compensation can act"
 ```
 
 ---
