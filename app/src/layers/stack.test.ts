@@ -102,3 +102,66 @@ describe('layerScaleFactor', () => {
     expect(layerScaleFactor(layers[2]!, layers[1]!)).toBeCloseTo(1e6, 0);
   });
 });
+
+const overlapping: LayerDef[] = [
+  { key: 'inner', url: '/i', unit: 'ly', unitInMetres: LY, minRadius: 0.01, maxRadius: 5000, origin: 'Sol' },
+  { key: 'mid', url: '/m', unit: 'ly', unitInMetres: LY, minRadius: 3000, maxRadius: 400000, origin: 'Sol' },
+  { key: 'outer', url: '/o', unit: 'Mly', unitInMetres: MLY, minRadius: 0.3, maxRadius: 300, origin: 'MW' },
+];
+
+describe('selectLayers across overlapping layers', () => {
+  it('blends inside an overlap band', () => {
+    // inner ends at 5000 ly, mid begins at 3000 ly - they overlap.
+    const s = selectLayers(4000 * LY, overlapping);
+    expect(s.primary.key).toBe('inner');
+    expect(s.secondary?.key).toBe('mid');
+    expect(s.blend).toBeGreaterThan(0);
+    expect(s.blend).toBeLessThan(1);
+  });
+
+  it('reaches the geometric midpoint of an overlap at blend 0.5', () => {
+    const midpoint = Math.sqrt(3000 * 5000) * LY;
+    expect(selectLayers(midpoint, overlapping).blend).toBeCloseTo(0.5, 2);
+  });
+
+  it('is fully the inner layer below the overlap', () => {
+    const s = selectLayers(1000 * LY, overlapping);
+    expect(s.primary.key).toBe('inner');
+    expect(s.secondary).toBeNull();
+  });
+
+  it('is fully the middle layer above the first overlap', () => {
+    const s = selectLayers(50000 * LY, overlapping);
+    expect(s.primary.key).toBe('mid');
+    expect(s.secondary).toBeNull();
+  });
+
+  it('blends the second overlap into the outer layer', () => {
+    const s = selectLayers(350000 * LY, overlapping);
+    expect(s.primary.key).toBe('mid');
+    expect(s.secondary?.key).toBe('outer');
+  });
+
+  it('never returns NaN when two layers exactly touch', () => {
+    const touching: LayerDef[] = [
+      { ...overlapping[0]!, maxRadius: 5000 },
+      { ...overlapping[1]!, minRadius: 5000 },
+    ];
+    for (const d of [4999, 5000, 5001, 10000]) {
+      const s = selectLayers(d * LY, touching);
+      expect(Number.isNaN(s.blend)).toBe(false);
+      expect(s.blend).toBeGreaterThanOrEqual(0);
+      expect(s.blend).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('stays monotonic through an overlap', () => {
+    let previous = -1;
+    for (let d = 3000; d <= 5000; d *= 1.05) {
+      const s = selectLayers(d * LY, overlapping);
+      if (s.secondary === null) continue;
+      expect(s.blend).toBeGreaterThanOrEqual(previous);
+      previous = s.blend;
+    }
+  });
+});
