@@ -18,6 +18,7 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { decodePickId, MAX_VERTICES_PER_TILE, type PickId } from './pickIds.js';
+import { NO_CUTOFF } from './pointMaterial.js';
 
 // Sub-pixel stars need a hit area larger than the point they are drawn as, and
 // never smaller than the widest star the visual pass can draw (uMaxSize, 8).
@@ -35,8 +36,13 @@ uniform vec3 uBboxMin;
 uniform vec3 uBboxExtent;
 uniform float uTileSlot;
 uniform float uPickPointSize;
+uniform float uMaxOriginDistance;
+uniform float uMaxCameraDistance;
+uniform float uTimeYears;
+uniform float uVelocityScale;
 
 in vec3 position;
+in vec3 aVelocity;
 in float aTypeFlags;
 
 flat out uint vPickId;
@@ -58,8 +64,22 @@ void main() {
     return;
   }
 
+  // Same drift and same cutoffs as pointMaterial's vertex shader: a hit has to
+  // be where the point is drawn at time t, and points the visual pass culled
+  // must not resolve at all.
+  vec3 layerPosition =
+      uBboxMin + position * uBboxExtent + aVelocity * uTimeYears * uVelocityScale;
+  vec4 viewPosition = modelViewMatrix * vec4(layerPosition, 1.0);
+
+  if (length(layerPosition) > uMaxOriginDistance ||
+      length(viewPosition.xyz) > uMaxCameraDistance) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    return;
+  }
+
   gl_PointSize = uPickPointSize;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(uBboxMin + position * uBboxExtent, 1.0);
+  gl_Position = projectionMatrix * viewPosition;
   vFragDepth = 1.0 + gl_Position.w;
 }
 `;
@@ -103,6 +123,10 @@ export function createPickMaterial(): RawShaderMaterial {
       uTileSlot: { value: 0 },
       uPickPointSize: { value: MIN_PICK_POINT_SIZE },
       uLogDepthBufFC: { value: 1 },
+      uMaxOriginDistance: { value: NO_CUTOFF },
+      uMaxCameraDistance: { value: NO_CUTOFF },
+      uTimeYears: { value: 0 },
+      uVelocityScale: { value: 0 },
     },
     transparent: false,
     // The identifier is bit-exact colour, so nothing may blend it.
@@ -259,9 +283,19 @@ export class PickingPass {
     );
     material.uniforms['uLogDepthBufFC']!.value = 2.0 / Math.log2(this.camera.far + 1.0);
 
+    // Every geometry-affecting uniform is mirrored from this mesh's own visual
+    // material rather than recomputed: the clock and the per-layer velocity
+    // scale then cannot drift apart from what was drawn, and the pick needs no
+    // knowledge of which layer the mesh belongs to.
     const source = (visual as RawShaderMaterial).uniforms;
     material.uniforms['uBboxMin']!.value = source?.['uBboxMin']?.value ?? new Vector3();
     material.uniforms['uBboxExtent']!.value = source?.['uBboxExtent']?.value ?? new Vector3(1, 1, 1);
+    material.uniforms['uTimeYears']!.value = source?.['uTimeYears']?.value ?? 0;
+    material.uniforms['uVelocityScale']!.value = source?.['uVelocityScale']?.value ?? 0;
+    material.uniforms['uMaxOriginDistance']!.value =
+      source?.['uMaxOriginDistance']?.value ?? NO_CUTOFF;
+    material.uniforms['uMaxCameraDistance']!.value =
+      source?.['uMaxCameraDistance']?.value ?? NO_CUTOFF;
     return material;
   }
 }
