@@ -165,3 +165,36 @@ describe('selectLayers across overlapping layers', () => {
     }
   });
 });
+
+describe('selectLayers with a zero lower band edge', () => {
+  // The registry already contains minRadius: 0 (the solar system layer), so
+  // this is reachable, not hypothetical. log(0) is -Infinity and the resulting
+  // NaN blend is not caught by clamping - it would silently hide a layer.
+  const zeroEdged: LayerDef[] = [
+    { key: 'inner', url: '/i', unit: 'ly', unitInMetres: LY, minRadius: 0.01, maxRadius: 5000, origin: 'Sol' },
+    { key: 'outer', url: '/o', unit: 'ly', unitInMetres: LY, minRadius: 0, maxRadius: 400000, origin: 'Sol' },
+  ];
+
+  it('never returns NaN', () => {
+    for (const d of [1, 1000, 2500, 4999]) {
+      const s = selectLayers(d * LY, zeroEdged);
+      expect(Number.isNaN(s.blend)).toBe(false);
+    }
+  });
+
+  it('still produces a usable blend in range', () => {
+    const s = selectLayers(1000 * LY, zeroEdged);
+    expect(s.blend).toBeGreaterThanOrEqual(0);
+    expect(s.blend).toBeLessThanOrEqual(1);
+    expect(s.secondary?.key).toBe('outer');
+  });
+
+  it('stays monotonic without the logarithm', () => {
+    let previous = -1;
+    for (const d of [1, 500, 1000, 2500, 4000, 4900]) {
+      const s = selectLayers(d * LY, zeroEdged);
+      expect(s.blend).toBeGreaterThanOrEqual(previous);
+      previous = s.blend;
+    }
+  });
+});

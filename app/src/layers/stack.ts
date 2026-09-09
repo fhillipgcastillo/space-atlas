@@ -47,11 +47,19 @@ export function selectLayers(distanceMetres: number, layers: LayerDef[]): LayerS
     if (distanceMetres <= bandLo) return { primary: inner, secondary: null, blend: 0 };
     if (distanceMetres < bandHi) {
       // Log space: a linear ramp across two decades would read as the outer
-      // layer for almost the whole transition. A zero-width band means the
-      // layers touch exactly, and the logarithm would divide by zero.
+      // layer for almost the whole transition. It needs a positive lower
+      // bound - log(0) is -Infinity, which yields a NaN blend that the clamp
+      // does not catch and that silently hides a layer.
       const span = Math.log(bandHi) - Math.log(bandLo);
-      const blend = span > 0 ? (Math.log(distanceMetres) - Math.log(bandLo)) / span : 1;
-      return { primary: inner, secondary: outer, blend: Math.min(Math.max(blend, 0), 1) };
+      const blend =
+        bandLo > 0 && span > 0
+          ? (Math.log(distanceMetres) - Math.log(bandLo)) / span
+          : (distanceMetres - bandLo) / (bandHi - bandLo);
+      return {
+        primary: inner,
+        secondary: outer,
+        blend: Number.isFinite(blend) ? Math.min(Math.max(blend, 0), 1) : 1,
+      };
     }
   }
 
