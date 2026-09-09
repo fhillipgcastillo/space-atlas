@@ -31,3 +31,11 @@ Adaptive exposure brightens a dim frame toward a target, so a fixed-camera lumin
 ## Auto-exposure pins at the cap beyond ~350,000 ly
 
 `MAX_EXPOSURE` is 16 to protect the modeled-versus-measured dimming ratio, which compresses toward 1 as exposure rises. The far view is therefore slightly dimmer than target. Revisit only if the distant galaxies read as too dim in use.
+
+## Search index costs ~103 MB of background traffic
+
+`buildSearchIndex` finds a named object's position by walking the layer's tiles and matching `localId`. The Milky Way root tile holds only 35 of its 2,013 named objects and Sagittarius A* sits in the deepest tile, so a complete index reads essentially the whole tree — about 84 MB for milky-way plus 19 MB for cosmic-web, settling after roughly 36 seconds.
+
+It never blocks startup and the small layers land in about a second, so this is a background cost rather than a stall.
+
+The real fix is in the bake: write positions into `names.json` (or a `names.bin` beside it), which makes the index three requests and under a megabyte. An intermediate fix is HTTP Range requests for just the `localId` slice of each tile — the offset is derivable from `pointCount` in `tileset.json` — cutting it to about 20 MB.
