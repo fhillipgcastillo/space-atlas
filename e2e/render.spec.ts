@@ -456,3 +456,318 @@ test('the sparse gap between stars and galaxies is gone', async ({ page }) => {
   expect(lit.litFraction).toBeGreaterThan(0.03);
   expect(blank.mean).toBeLessThan(0.2);
 });
+
+const clockYears = (page: Page): Promise<number> =>
+  page.evaluate(() => window.__universeMap!.viewer.getTimeYears());
+
+// A layer copies the clock into its uniforms inside its own per-frame update, so
+// a time set through the viewer reaches the shader on the next frame, not at once.
+async function setClock(page: Page, years: number): Promise<void> {
+  await page.evaluate(async (value) => {
+    window.__universeMap!.viewer.setTimeYears(value);
+    for (let i = 0; i < 4; i++) await new Promise((r) => requestAnimationFrame(r));
+  }, years);
+}
+
+// Renders through the composer, keeps that frame's luminance on the page, and
+// reports how much of it changed since the previous call. Mean luminance alone is
+// a weak signal here: the field can travel a long way while the total brightness
+// barely moves, so the discriminating number is the changed fraction.
+function sampleFrame(page: Page): Promise<{ mean: number; changed: number }> {
+  return page.evaluate(() => {
+    const { viewer } = window.__universeMap!;
+    viewer.renderFrame();
+    const gl = viewer.renderer.getContext();
+    const width = viewer.renderer.domElement.width;
+    const height = viewer.renderer.domElement.height;
+    const pixels = new Uint8Array(width * height * 4);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    const luminance = new Uint8Array(width * height);
+    let total = 0;
+    for (let i = 0; i < luminance.length; i++) {
+      const value =
+        0.2126 * pixels[i * 4]! + 0.7152 * pixels[i * 4 + 1]! + 0.0722 * pixels[i * 4 + 2]!;
+      luminance[i] = value;
+      total += value;
+    }
+
+    const store = window as unknown as { __timeFrame?: Uint8Array };
+    const previous = store.__timeFrame;
+    store.__timeFrame = luminance;
+    let changed = 0;
+    if (previous?.length === luminance.length) {
+      for (let i = 0; i < luminance.length; i++) {
+        if (Math.abs(luminance[i]! - previous[i]!) > 16) changed++;
+      }
+    }
+    return {
+      mean: total / luminance.length,
+      changed: previous ? changed / luminance.length : Number.NaN,
+    };
+  });
+}
+
+test('the time control opens at present day', async ({ page }) => {
+  await expect(page.getByTestId('time-controls')).toBeVisible();
+  await expect(page.getByTestId('time-readout')).toHaveText('present day');
+  expect(await clockYears(page)).toBe(0);
+  await expect(page.getByTestId('time-disclosure')).not.toBeVisible();
+});
+
+test('dragging the time slider moves the field', async ({ page }) => {
+  await waitForIdleLoader(page);
+  // Exposure adaptation rescales the whole frame between the two grabs, which
+  // would read as motion; pin it so the diff measures only the field.
+  await page.evaluate(() => window.__universeMap!.viewer.setAutoExposure(false));
+  const before = await sampleFrame(page);
+
+  const box = (await page.getByTestId('time-slider').boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  // Past the right edge, so the value lands on MAX_YEARS rather than on wherever
+  // the thumb geometry puts it.
+  await page.mouse.move(box.x + box.width + 200, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(page.getByTestId('time-readout')).toHaveText('+1,000,000 years');
+  expect(await clockYears(page)).toBe(1_000_000);
+
+  await page.evaluate(async () => {
+    for (let i = 0; i < 4; i++) await new Promise((r) => requestAnimationFrame(r));
+  });
+  const after = await sampleFrame(page);
+  console.log(
+    `time drag: mean ${before.mean.toFixed(2)} -> ${after.mean.toFixed(2)}, ` +
+      `${(after.changed * 100).toFixed(1)}% of pixels changed`,
+  );
+  expect(after.changed).toBeGreaterThan(0.02);
+});
+
+test('the disclosure appears off present day and goes away at zero', async ({ page }) => {
+  // Also the check that the clock does not survive the navigation in beforeEach:
+  // the test above leaves it at MAX_YEARS.
+  expect(await clockYears(page)).toBe(0);
+  const disclosure = page.getByTestId('time-disclosure');
+  await expect(disclosure).not.toBeVisible();
+
+  await setClock(page, 250_000);
+  await expect(disclosure).toBeVisible();
+  await expect(disclosure).toContainText(
+    /\d+% of the catalogued objects in view have no measured radial velocity/,
+  );
+  await expect(disclosure).toContainText('million years');
+  console.log(`disclosure: ${await disclosure.textContent()}`);
+
+  await page.getByTestId('time-reset').click();
+  await expect(page.getByTestId('time-readout')).toHaveText('present day');
+  await expect(disclosure).not.toBeVisible();
+  expect(await clockYears(page)).toBe(0);
+});
+
+test('the modeled population stands still while measured stars move', async ({ page }) => {
+  test.setTimeout(300_000);
+  // Both populations are on screen here: the stellar layer and the modeled
+  // milky-way layer overlap across 3,000-5,000 ly.
+  await page.evaluate(async () => {
+    window.__universeMap!.viewer.camera.position.set(0, 0, 4000);
+    await new Promise((r) => setTimeout(r, 8000));
+  });
+  await waitForIdleLoader(page);
+
+  const YEARS = 200_000;
+  const probe = await page.evaluate(async (years) => {
+    const { viewer, layers } = window.__universeMap!;
+    type SlotEntry = NonNullable<
+      ReturnType<(typeof layers)[number]['manager']['tilesBySlot']['get']>
+    >;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const scratch = viewer.camera.position.clone();
+    const uniformsOf = (entry: SlotEntry): Record<string, { value: unknown }> =>
+      (entry.mesh.material as unknown as Record<string, Record<string, { value: unknown }>>)[
+        'uniforms'
+      ]!;
+
+    // The vertex shader's own arithmetic, over the mesh's own uniforms and the
+    // buffers that were uploaded to the GPU.
+    const screenAt = (entry: SlotEntry, index: number, timeYears: number) => {
+      const uniforms = uniformsOf(entry);
+      const scale = uniforms['uVelocityScale']!.value as number;
+      const min = uniforms['uBboxMin']!.value as { x: number; y: number; z: number };
+      const extent = uniforms['uBboxExtent']!.value as { x: number; y: number; z: number };
+      const position = entry.mesh.geometry.attributes['position']!;
+      const velocity = entry.mesh.geometry.attributes['aVelocity']!;
+      scratch.set(
+        min.x + position.getX(index) * extent.x + velocity.getX(index) * timeYears * scale,
+        min.y + position.getY(index) * extent.y + velocity.getY(index) * timeYears * scale,
+        min.z + position.getZ(index) * extent.z + velocity.getZ(index) * timeYears * scale,
+      );
+      scratch.applyMatrix4(entry.mesh.matrixWorld).project(viewer.camera);
+      return {
+        x: ((scratch.x + 1) / 2) * width,
+        y: ((1 - scratch.y) / 2) * height,
+        inFrustum: Math.abs(scratch.x) <= 1 && Math.abs(scratch.y) <= 1 && Math.abs(scratch.z) <= 1,
+      };
+    };
+
+    // Prime, so the walk never lands in step with a tile's own point ordering.
+    const STRIDE = 17;
+    let modeled: { entry: SlotEntry; index: number; layer: string } | undefined;
+    let measured: { entry: SlotEntry; index: number; layer: string; transverse: number } | undefined;
+
+    for (const layer of layers) {
+      for (const entry of layer.manager.tilesBySlot.values()) {
+        if (!entry.mesh.visible) continue;
+        const velocity = entry.mesh.geometry.attributes['aVelocity']!;
+        for (let i = 0; i < entry.tile.pointCount; i += STRIDE) {
+          if (!screenAt(entry, i, 0).inFrustum) continue;
+          // FLAG_MODELED is bit 0x10 (pipeline/universe_pipeline/records.py).
+          if ((entry.tile.typeFlags[i]! & 0x10) !== 0) {
+            modeled ??= { entry, index: i, layer: layer.def.key };
+            continue;
+          }
+          // The camera sits on +z looking at the origin, so x and y carry the
+          // motion across the view; a point drifting along the line of sight
+          // would barely shift its projection however fast it travels.
+          const transverse = Math.hypot(velocity.getX(i), velocity.getY(i));
+          if (!measured || transverse > measured.transverse) {
+            measured = { entry, index: i, layer: layer.def.key, transverse };
+          }
+        }
+      }
+    }
+    if (!modeled || !measured) return null;
+
+    viewer.setTimeYears(years);
+    for (let i = 0; i < 4; i++) await new Promise((r) => requestAnimationFrame(r));
+
+    // Both times are projected in this one task against one camera state, so
+    // nothing but the clock can move a point. The late time comes from the mesh's
+    // own uniform: a clock that never reached this tile reads as zero motion and
+    // fails the measured assertion.
+    const report = (candidate: { entry: SlotEntry; index: number; layer: string }) => {
+      const velocity = candidate.entry.mesh.geometry.attributes['aVelocity']!;
+      const at = uniformsOf(candidate.entry)['uTimeYears']!.value as number;
+      const before = screenAt(candidate.entry, candidate.index, 0);
+      const after = screenAt(candidate.entry, candidate.index, at);
+      return {
+        layer: candidate.layer,
+        index: candidate.index,
+        uniformYears: at,
+        speed: Math.hypot(
+          velocity.getX(candidate.index),
+          velocity.getY(candidate.index),
+          velocity.getZ(candidate.index),
+        ),
+        velocity: [
+          velocity.getX(candidate.index),
+          velocity.getY(candidate.index),
+          velocity.getZ(candidate.index),
+        ],
+        before: { x: before.x, y: before.y },
+        after: { x: after.x, y: after.y },
+        moved: Math.hypot(after.x - before.x, after.y - before.y),
+      };
+    };
+    return { modeled: report(modeled), measured: report(measured) };
+  }, YEARS);
+
+  expect(probe).not.toBeNull();
+  const { modeled, measured } = probe!;
+  console.log(`modeled  ${JSON.stringify(modeled)}`);
+  console.log(`measured ${JSON.stringify(measured)}`);
+
+  // The clock has to have reached both tiles, or neither side means anything.
+  expect(modeled.uniformYears).toBe(YEARS);
+  expect(measured.uniformYears).toBe(YEARS);
+
+  // The modeled population carries no kinematics at all, so it must not shift by
+  // so much as a float: this is the claim the disclosure makes, in test form.
+  expect(modeled.speed).toBe(0);
+  expect(modeled.after.x).toBe(modeled.before.x);
+  expect(modeled.after.y).toBe(modeled.before.y);
+
+  expect(measured.speed).toBeGreaterThan(0);
+  expect(measured.moved).toBeGreaterThan(5);
+});
+
+test('hover picks the field where it is at the current time', async ({ page }) => {
+  test.setTimeout(300_000);
+  await waitForIdleLoader(page);
+  await page.evaluate(() => window.__universeMap!.identifiersReady);
+  await setClock(page, 1_000_000);
+
+  const probe = await page.evaluate(() => {
+    const { viewer, manager, picking, hover } = window.__universeMap!;
+    type SlotEntry = NonNullable<ReturnType<(typeof manager)['tilesBySlot']['get']>>;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const scratch = viewer.camera.position.clone();
+    const uniformsOf = (entry: SlotEntry): Record<string, { value: unknown }> =>
+      (entry.mesh.material as unknown as Record<string, Record<string, { value: unknown }>>)[
+        'uniforms'
+      ]!;
+
+    const screenAt = (entry: SlotEntry, index: number, timeYears: number) => {
+      const uniforms = uniformsOf(entry);
+      const scale = uniforms['uVelocityScale']!.value as number;
+      const min = uniforms['uBboxMin']!.value as { x: number; y: number; z: number };
+      const extent = uniforms['uBboxExtent']!.value as { x: number; y: number; z: number };
+      const position = entry.mesh.geometry.attributes['position']!;
+      const velocity = entry.mesh.geometry.attributes['aVelocity']!;
+      scratch.set(
+        min.x + position.getX(index) * extent.x + velocity.getX(index) * timeYears * scale,
+        min.y + position.getY(index) * extent.y + velocity.getY(index) * timeYears * scale,
+        min.z + position.getZ(index) * extent.z + velocity.getZ(index) * timeYears * scale,
+      );
+      scratch.applyMatrix4(entry.mesh.matrixWorld).project(viewer.camera);
+      return { x: ((scratch.x + 1) / 2) * width, y: ((1 - scratch.y) / 2) * height };
+    };
+
+    const hits: { atTime: number; atZero: number }[] = [];
+    let sampled = 0;
+    let carded = 0;
+    for (let x = 240; x < 1100; x += 120) {
+      for (let y = 160; y < 620; y += 100) {
+        sampled++;
+        const id = picking.pickAt(x, y);
+        if (!id) continue;
+        const entry = manager.tilesBySlot.get(id.tileSlot);
+        if (!entry || id.vertexIndex >= entry.tile.pointCount) continue;
+        const atTime = screenAt(entry, id.vertexIndex, uniformsOf(entry)['uTimeYears']!
+          .value as number);
+        const atZero = screenAt(entry, id.vertexIndex, 0);
+        if (hover.pick(x, y)) carded++;
+        hits.push({
+          atTime: Math.hypot(atTime.x - x, atTime.y - y),
+          atZero: Math.hypot(atZero.x - x, atZero.y - y),
+        });
+      }
+    }
+    return { sampled, carded, hits, years: viewer.getTimeYears() };
+  });
+
+  const median = (values: number[]): number => {
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)] ?? 0;
+  };
+  const atTime = probe.hits.map((h) => h.atTime);
+  const atZero = probe.hits.map((h) => h.atZero);
+  console.log(
+    `pick at ${probe.years} yr: ${probe.hits.length}/${probe.sampled} hits, ${probe.carded} carded, ` +
+      `offset at time median ${median(atTime).toFixed(1)}px max ${Math.max(...atTime).toFixed(1)}px, ` +
+      `at t=0 median ${median(atZero).toFixed(1)}px`,
+  );
+
+  expect(probe.years).toBe(1_000_000);
+  expect(probe.hits.length).toBeGreaterThan(4);
+  expect(probe.carded).toBe(probe.hits.length);
+  // The pick point is 10 CSS px wide and the scissor adds 2, so a hit can sit a
+  // few pixels off the probe, but not tens.
+  expect(Math.max(...atTime)).toBeLessThan(24);
+  // And the clock has to be what put it there: at t = 0 the same points project
+  // nowhere near the pixel they were picked at, so the bound above is not
+  // something a time-blind pick pass could satisfy.
+  expect(median(atZero)).toBeGreaterThan(24);
+});
