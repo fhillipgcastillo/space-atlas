@@ -5,6 +5,7 @@ import { LayerRenderer } from './layerRenderer.js';
 import type { LayerDef } from './stack.js';
 
 const LY_IN_METRES = 9460730472580800;
+const METRES_PER_PARSEC = 3.0856775814913673e16;
 
 const def: LayerDef = {
   key: 'stellar',
@@ -94,5 +95,42 @@ describe('LayerRenderer opacity', () => {
 
     // A second call means an invisible layer is still competing for the eight in-flight slots.
     expect(update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('LayerRenderer parsecs per unit', () => {
+  const active: LayerDef = {
+    key: 'local-universe',
+    url: '/data/local-universe',
+    unit: 'Mly',
+    unitInMetres: LY_IN_METRES * 1e6,
+    minRadius: 0.3,
+    maxRadius: 300,
+    origin: 'Milky Way',
+  };
+
+  it('keeps scale times parsecs-per-unit equal to the layer own scale', async () => {
+    const renderer = await makeRenderer();
+    const material = deliver(renderer, 'r0');
+
+    for (const activeDef of [def, active]) {
+      renderer.applyActiveLayer(activeDef);
+      // The shader multiplies a length already scaled by the group, so the
+      // product is what converts a layer-unit distance into parsecs.
+      const product =
+        renderer.group.scale.x * (material.uniforms['uParsecsPerUnit']!.value as number);
+      expect(product).toBeCloseTo(def.unitInMetres / METRES_PER_PARSEC, 6);
+    }
+  });
+
+  it('gives a tile that streams in later the active layer value', async () => {
+    const renderer = await makeRenderer();
+    renderer.applyActiveLayer(active);
+
+    const material = deliver(renderer, 'r1');
+    expect(material.uniforms['uParsecsPerUnit']!.value).toBeCloseTo(
+      active.unitInMetres / METRES_PER_PARSEC,
+      6,
+    );
   });
 });

@@ -5,6 +5,8 @@ import { fetchTileset, type Tileset } from '../tiles/tileset.js';
 import type { ViewState } from '../tiles/traversal.js';
 import { layerScaleFactor, type LayerDef } from './stack.js';
 
+const METRES_PER_PARSEC = 3.0856775814913673e16;
+
 export function opacityForBlend(role: 'primary' | 'secondary', blend: number): number {
   const clamped = Math.min(Math.max(blend, 0), 1);
   return role === 'primary' ? 1 - clamped : clamped;
@@ -33,19 +35,14 @@ export class LayerRenderer {
   setOpacity(value: number): void {
     this.opacity = Math.min(Math.max(value, 0), 1);
     this.group.visible = this.opacity > 0;
-    for (const mesh of this.manager.meshes.values()) {
-      if (Array.isArray(mesh.material)) continue;
-      const uniform = (mesh.material as RawShaderMaterial).uniforms['uLayerOpacity'];
-      if (uniform) uniform.value = this.opacity;
-    }
-    // createTileMesh clones this material per tile, so tiles that stream in
-    // later inherit the current opacity from here.
-    const base = this.material.uniforms['uLayerOpacity'];
-    if (base) base.value = this.opacity;
+    this.setUniform('uLayerOpacity', this.opacity);
   }
 
   applyActiveLayer(active: LayerDef): void {
     this.group.scale.setScalar(layerScaleFactor(this.def, active));
+    // The group scale sits inside modelViewMatrix, so the shader measures
+    // distance in the active layer's units, never in this layer's own.
+    this.setUniform('uParsecsPerUnit', active.unitInMetres / METRES_PER_PARSEC);
   }
 
   update(view: ViewState): void {
@@ -57,5 +54,17 @@ export class LayerRenderer {
 
   dispose(): void {
     this.manager.dispose();
+  }
+
+  // createTileMesh clones this material per tile, so the base has to be written
+  // too or tiles that stream in later inherit a stale value.
+  private setUniform(name: string, value: number): void {
+    for (const mesh of this.manager.meshes.values()) {
+      if (Array.isArray(mesh.material)) continue;
+      const uniform = (mesh.material as RawShaderMaterial).uniforms[name];
+      if (uniform) uniform.value = value;
+    }
+    const base = this.material.uniforms[name];
+    if (base) base.value = value;
   }
 }

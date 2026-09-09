@@ -26,7 +26,10 @@ export const maxNodesForBudget = (budget: number, bytesPerPoint: number): number
   Math.max(1, Math.floor(budget / (MAX_POINTS_PER_TILE * bytesPerPoint)));
 
 export const DEFAULT_OPTIONS: TileManagerOptions = {
-  screenSpaceErrorThreshold: 160,
+  // One pixel of projected point spacing: below that, refining a point cloud
+  // adds no resolvable detail. 160 stopped refining as soon as the camera left
+  // the root box, collapsing the whole 1705-tile layer to its root subsample.
+  screenSpaceErrorThreshold: 1,
   maxVisibleNodes: maxNodesForBudget(GPU_BYTE_BUDGET, 41),
   maxInFlight: 8,
   gpuByteBudget: GPU_BYTE_BUDGET,
