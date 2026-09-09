@@ -117,32 +117,44 @@ z(t)   = z0 cos(nu t) + (vz0/nu) sin(nu t)
 Assert against the *numbers in the table above*, not against whatever the code
 happens to produce.
 
-## Open lead: the azimuth truncation (do NOT act on this in Task 2)
+## Open lead: the azimuth coefficient (do NOT act on this in Task 2)
 
-Task 1 established that the 250 Myr error is dominated by `phi_dot =
-Omega_g (1 - 2X/Rg)` being a first-order truncation of `Lz/r^2`, and
-proposed `Omega_eff = Omega_g (1 + 1.5 (A/Rg)^2)` as the standard
-second-order fix. Measured against RK4, that makes it **worse**: 4.86% ->
-11.78% at 250 Myr. It was proposed but correctly not applied.
+Task 1 proposed `Omega_eff = Omega_g (1 + 1.5 (A/Rg)^2)`, the textbook
+second-order secular term, and correctly did not apply it. Measured
+against RK4 it makes things **worse**: 4.86% -> 11.78% at 250 Myr.
 
-Scanning the coefficient instead:
+Where the error actually lives, decomposed at 250 Myr for a 17 km/s
+lagging star: radial 18.9 pc, tangential 388.1 pc. So it is azimuthal,
+but it is the *oscillating* term (amplitude about 850 pc for this orbit),
+not the secular rate — which is why a mean-rate correction is the wrong
+knob. The true mean rate is only 0.61% off, and the +1.5 term does move
+toward it, overshooting to +0.30%.
 
-| coefficient | 100 Myr | 250 Myr |
-|---|---|---|
-| 0 (shipped) | 2.45% | 4.86% |
-| +1.5 (the textbook second-order term) | 5.12% | 11.78% |
-| **-0.75** | **1.29%** | **1.49%** |
+Negating and halving that coefficient improves things, and not only for
+the orbit it was found on:
 
-`-3/4` is a 3.3x improvement and suspiciously clean, but it is the
-opposite sign to the derivation that motivates it, which means the
-derivation is wrong somewhere and the number is currently just a fit.
-**Shipping it would be a fudge factor, which this design does not
-allow.** The shipped model stays first-order at a disclosed 5.4%.
+| peculiar kick | t | first order | with -0.75 |
+|---|---|---|---|
+| 5 km/s | 250 Myr | 0.401% | **0.142%** |
+| 17 km/s | 60 Myr | 1.751% | **1.400%** |
+| 17 km/s | 250 Myr | 5.048% | **1.492%** |
+| 40 km/s | 250 Myr | 19.555% | **10.138%** |
+| 80 km/s | 250 Myr | 129.402% | **60.578%** |
 
-Worth someone deriving properly: whether `Rg` from `Lz = Rg v_c(Rg)` is
-the right expansion centre, and whether the amplitude `A` should be the
-true radial excursion rather than the epicyclic one. If it derives, the
-deep range could extend well past one galactic year.
+Better in all sixteen cases swept, across a 16x range of peculiar speed
+and a 4x range of time. That is not an overfit to one orbit, and it is
+worth someone finishing.
+
+But it is still **not derived**. The second-order effects that can be
+accounted for sum to about +1.24, not -0.75: the `3X^2/Rg^2` term gives
++1.5, and the non-zero mean of the true radial oscillation (measured
+`<r> - Rg = +5.97 pc` at `A = 580 pc`) gives about -0.26 through the
+`-2X/Rg` term. Something real is missing from that accounting.
+
+**Shipping an underived constant would be a fudge factor, which this
+design does not allow.** The shipped model stays first order at a
+disclosed 5.4%. If the derivation lands, the deep range extends well past
+one galactic year and this table becomes the regression test.
 
 ---
 
