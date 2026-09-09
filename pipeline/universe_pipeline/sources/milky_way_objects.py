@@ -43,6 +43,34 @@ _CLUSTER_FLAGS = pack_type(CLASS_CLUSTER, FLAG_NO_RADIAL_VELOCITY)
 _BLACK_HOLE_FLAGS = pack_type(CLASS_BLACK_HOLE, FLAG_NO_RADIAL_VELOCITY)
 
 
+def sexagesimal_to_degrees(ra: np.ndarray, dec: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Harris gives RA in sexagesimal hours and Dec in sexagesimal degrees."""
+    import astropy.units as u
+    from astropy.coordinates import SkyCoord
+
+    coord = SkyCoord(
+        ra=np.asarray(ra, dtype=np.str_),
+        dec=np.asarray(dec, dtype=np.str_),
+        unit=(u.hourangle, u.deg),
+    )
+    return (
+        np.asarray(coord.ra.to_value(u.deg), dtype=np.float64),
+        np.asarray(coord.dec.to_value(u.deg), dtype=np.float64),
+    )
+
+
+def globular_display_names(ids: np.ndarray, common: np.ndarray) -> list[str]:
+    """ID is the designation and always present; Name is a common name, blank
+    for 101 of the 147 rows."""
+    out: list[str] = []
+    designations = np.asarray(ids, dtype=np.str_)
+    commons = np.asarray(common, dtype=np.str_)
+    for designation, name in zip(designations, commons, strict=True):
+        d, n = str(designation).strip(), str(name).strip()
+        out.append(f"{d} ({n})" if d and n else d or n)
+    return out
+
+
 def fetch_milky_way_objects(cache_dir: Path) -> dict[str, np.ndarray]:
     """The two cluster catalogues joined, with Sagittarius A* appended."""
     cached = cache_dir / "milky-way-objects.npz"
@@ -57,19 +85,22 @@ def fetch_milky_way_objects(cache_dir: Path) -> dict[str, np.ndarray]:
     opens = vizier.get_catalogs(OPEN_CLUSTER_TABLE)[OPEN_CLUSTER_TABLE]
 
     globular_distance_ly = np.asarray(globulars["Rsun"], dtype=np.float64) * LY_PER_KPC
+    globular_ra, globular_dec = sexagesimal_to_degrees(
+        globulars["RAJ2000"], globulars["DEJ2000"]
+    )
     open_distance_ly = np.asarray(opens["DistPc"], dtype=np.float64) * LY_PER_PC
 
     arrays = {
         "ra": np.concatenate(
             [
-                np.asarray(globulars["RAJ2000"], dtype=np.float64),
+                globular_ra,
                 np.asarray(opens["RA_ICRS"], dtype=np.float64),
                 np.array([SGR_A_STAR_ICRS[0]], dtype=np.float64),
             ]
         ),
         "dec": np.concatenate(
             [
-                np.asarray(globulars["DEJ2000"], dtype=np.float64),
+                globular_dec,
                 np.asarray(opens["DE_ICRS"], dtype=np.float64),
                 np.array([SGR_A_STAR_ICRS[1]], dtype=np.float64),
             ]
@@ -97,7 +128,7 @@ def fetch_milky_way_objects(cache_dir: Path) -> dict[str, np.ndarray]:
         ),
         "name": np.concatenate(
             [
-                np.asarray(globulars["Name"], dtype=np.str_),
+                np.asarray(globular_display_names(globulars["ID"], globulars["Name"])),
                 np.asarray(opens["Cluster"], dtype=np.str_),
                 np.array([SGR_A_STAR_NAME], dtype=np.str_),
             ]

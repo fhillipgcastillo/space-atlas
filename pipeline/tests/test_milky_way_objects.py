@@ -94,3 +94,36 @@ def test_a_non_positive_distance_is_dropped_rather_than_placed_at_the_origin() -
     record, _ = normalise_milky_way_objects(table, L2_MILKY_WAY)
 
     assert len(record) == 2
+
+
+def test_sexagesimal_coordinates_parse_to_degrees() -> None:
+    # Harris gives RA in sexagesimal HOURS, not degrees. Reading '00 24 05.2'
+    # as a float raises; reading it as degrees would be wrong by a factor 15.
+    from universe_pipeline.sources.milky_way_objects import sexagesimal_to_degrees
+
+    ra, dec = sexagesimal_to_degrees(
+        np.array(["00 24 05.2", "13 26 47.28"]), np.array(["-72 04 51", "-47 28 46.1"])
+    )
+
+    # 47 Tuc and omega Cen, from SIMBAD.
+    np.testing.assert_allclose(ra, [6.0217, 201.697], atol=1e-3)
+    np.testing.assert_allclose(dec, [-72.0808, -47.4795], atol=1e-3)
+
+
+def test_a_float_read_of_the_harris_coordinates_would_fail() -> None:
+    # Pins why the helper exists: the naive conversion raises rather than
+    # quietly producing wrong numbers, but only on a cold cache.
+    with pytest.raises(ValueError):
+        np.asarray(np.array(["00 24 05.2"]), dtype=np.float64)
+
+
+def test_every_globular_gets_a_non_empty_display_name() -> None:
+    from universe_pipeline.sources.milky_way_objects import globular_display_names
+
+    # Name is blank for 101 of the 147 Harris rows; ID is always populated.
+    names = globular_display_names(
+        np.array(["NGC 104", "NGC 288", "NGC 5139"]), np.array(["47 Tuc", "", "omega Cen"])
+    )
+
+    assert names == ["NGC 104 (47 Tuc)", "NGC 288", "NGC 5139 (omega Cen)"]
+    assert all(name.strip() for name in names)
