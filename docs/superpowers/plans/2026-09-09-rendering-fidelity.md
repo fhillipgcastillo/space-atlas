@@ -404,7 +404,9 @@ describe('exposureForLuminance', () => {
   });
 
   it('clamps rather than returning an absurd exposure for a near-black frame', () => {
-    expect(exposureForLuminance(1e-9)).toBeLessThanOrEqual(64);
+    // Capped at 16: the honesty dimming ratio compresses toward 1 as exposure
+    // rises, so an unbounded ceiling would erode it.
+    expect(exposureForLuminance(1e-9)).toBeLessThanOrEqual(16);
   });
 });
 
@@ -448,8 +450,11 @@ Expected: cannot resolve `./autoExposure.js`.
 
 ```typescript
 export const TARGET_LUMINANCE = 0.18;
-const MIN_EXPOSURE = 1 / 64;
-const MAX_EXPOSURE = 64;
+const MIN_EXPOSURE = 1 / 512;
+// The modeled-versus-measured dimming ratio compresses toward 1 as exposure
+// rises - measured 0.483 at exposure 1 and 0.558 at exposure 4 - so the
+// ceiling is set just above what the far view needs rather than left wide.
+const MAX_EXPOSURE = 16;
 const DEFAULT_HALF_LIFE_SECONDS = 0.6;
 
 export function exposureForLuminance(
@@ -549,6 +554,12 @@ git commit -m "fix(app): lower the brightness floors so flux compensation can ac
 
 Measure the live values first and report them against the thresholds. If the margin has collapsed, widen the threshold **downward only if the view is genuinely still legible** — and say so. Do not raise a threshold to make a dimmer view pass; that converts a regression detector into a rubber stamp.
 
+**Two corrections Task 3 measured, both of which break the tests below as written.**
+
+**1. `measureLuminance` bypasses the composer and is immune to exposure.** It calls `renderer.render(scene, camera)` straight to the canvas. Every scene material is a `RawShaderMaterial`, which three does not inject tone mapping into, so that path produces identical output at exposure 0.02 and at exposure 1 — measured. **Fix the helper first**: render through `viewer.composer` and read the canvas afterwards. Until that is done, every assertion here measures a frame nobody sees, and the existing `mean > 1.5` assertion is equally blind.
+
+**2. The core test needs a `lookAt`.** `camera.position.set(26670 - 12000, 0, 0)` leaves the default orientation looking down −Z, so the galactic centre at +X is 90° off screen: 0.004% saturated, versus 66.7% when facing it. Add `viewer.camera.lookAt(26670, 0, 0)` or the test passes against a frame that was never broken.
+
 - [ ] **Step 1: Add two tests**
 
 ```typescript
@@ -557,6 +568,7 @@ test('the galactic core is legible from inside it', async ({ page }) => {
     const u = window.__universeMap!;
     // 12,000 ly from the galactic centre, which sits at +X.
     u.viewer.camera.position.set(26670 - 12000, 0, 0);
+    u.viewer.camera.lookAt(26670, 0, 0);
     await new Promise((r) => setTimeout(r, 12000));
     return measureLuminanceInPage();
   });
