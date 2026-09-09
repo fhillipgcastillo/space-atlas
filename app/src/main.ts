@@ -36,6 +36,14 @@ declare global {
 
 // A layer with no identifier sidecar answers 404; that is "no identifiers", not
 // a failure, so hover falls back to its generic label.
+async function loadNames(url: string): Promise<Map<number, string>> {
+  // Only small layers ship a name sidecar; a 404 means "no names", not an error.
+  const response = await fetch(`${url}/names.json`).catch(() => undefined);
+  if (!response?.ok) return new Map();
+  const raw = (await response.json()) as Record<string, string>;
+  return new Map(Object.entries(raw).map(([k, v]) => [Number(k), v]));
+}
+
 async function loadIdentifiers(url: string): Promise<BigUint64Array | undefined> {
   const response = await fetch(`${url}/ids.bin`);
   if (!response.ok) return undefined;
@@ -53,8 +61,10 @@ async function boot(): Promise<void> {
   // The identifier tables are tens of megabytes and only hover needs them, so
   // the field must never wait on them.
   const identifiers = new Map<string, BigUint64Array>();
+  const names = new Map<string, Map<number, string>>();
   const identifiersReady = Promise.all(
     LAYERS.map(async (def) => {
+      names.set(def.key, await loadNames(def.url));
       const ids = await loadIdentifiers(def.url).catch((error: unknown) => {
         console.warn(`identifier table unavailable for ${def.key}`, error);
         return undefined;
@@ -76,11 +86,20 @@ async function boot(): Promise<void> {
       get unit() {
         return primary.def.unit;
       },
+      get origin() {
+        return primary.tileset.origin;
+      },
       tileForSlot: (slot) => primary.manager.tilesBySlot.get(slot),
-      catalogId: (tile, index) => {
+      identify: (tile, index) => {
         const local = tile.localId[index];
         if (local === undefined) return undefined;
-        return identifiers.get(primary.def.key)?.[local];
+        const key = primary.def.key;
+        const named = names.get(key)?.get(local);
+        if (named !== undefined) return named;
+        const id = identifiers.get(key)?.[local];
+        if (id === undefined) return undefined;
+        const prefix = primary.tileset.idPrefix;
+        return prefix ? `${prefix} ${id}` : String(id);
       },
     },
     viewer.renderer.domElement,

@@ -16,6 +16,7 @@ export interface Tileset {
   unitInMetres: number;
   frame: string;
   origin: string;
+  idPrefix: string;
   pointCount: number;
   root: TileNode;
 }
@@ -60,6 +61,7 @@ export function parseTileset(json: unknown): Tileset {
     unitInMetres: Number(json['unitInMetres']),
     frame: String(json['frame']),
     origin: String(json['origin']),
+    idPrefix: typeof json['idPrefix'] === 'string' ? json['idPrefix'] : '',
     pointCount: Number(json['pointCount']),
     root: parseNode(json['root'], 'root'),
   };

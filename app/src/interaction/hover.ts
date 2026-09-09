@@ -6,8 +6,35 @@ import type { HoverCard } from '../ui/hoverCard.js';
 
 export interface HoverSource {
   tileForSlot(slot: number): { tile: DecodedTile; mesh: Points } | undefined;
-  catalogId(tile: DecodedTile, vertexIndex: number): bigint | undefined;
+  /** Display name, else a catalogue designation, else undefined when neither is loaded. */
+  identify(tile: DecodedTile, vertexIndex: number): string | undefined;
   unit: string;
+  origin: string;
+}
+
+export interface HoverFields {
+  label: string | undefined;
+  flags: number;
+  distance: number;
+  unit: string;
+  origin: string;
+  absMag: number;
+  speed: number;
+}
+
+export function hoverCardText(f: HoverFields): string {
+  const type = describeType(f.flags);
+  return [
+    f.label ?? type,
+    ...(f.label === undefined ? [] : [type]),
+    `${f.distance.toFixed(2)} ${f.unit} from ${f.origin}`,
+    hasMeasuredMagnitude(f.flags)
+      ? `absolute magnitude ${f.absMag.toFixed(2)}`
+      : `absolute magnitude ${f.absMag.toFixed(2)} (nominal)`,
+    hasRadialVelocity(f.flags)
+      ? `${f.speed.toFixed(1)} km/s`
+      : `${f.speed.toFixed(1)} km/s (transverse only)`,
+  ].join('\n');
 }
 
 const scratch = new Float64Array(3);
@@ -56,7 +83,6 @@ export class HoverController {
 
     dequantizePosition(entry.tile, hit.vertexIndex, scratch);
     const distance = Math.hypot(scratch[0]!, scratch[1]!, scratch[2]!);
-    const catalogId = this.source.catalogId(entry.tile, hit.vertexIndex);
 
     const { tile } = entry;
     const index = hit.vertexIndex;
@@ -69,17 +95,15 @@ export class HoverController {
     );
 
     this.card.show(
-      [
-        catalogId === undefined ? 'Star' : `Gaia DR3 ${catalogId}`,
-        describeType(flags),
-        `${distance.toFixed(2)} ${this.source.unit} from Earth`,
-        hasMeasuredMagnitude(flags)
-          ? `absolute magnitude ${absMag.toFixed(2)}`
-          : `absolute magnitude ${absMag.toFixed(2)} (nominal)`,
-        hasRadialVelocity(flags)
-          ? `${speed.toFixed(1)} km/s`
-          : `${speed.toFixed(1)} km/s (transverse only)`,
-      ].join('\n'),
+      hoverCardText({
+        label: this.source.identify(tile, index),
+        flags,
+        distance,
+        unit: this.source.unit,
+        origin: this.source.origin,
+        absMag,
+        speed,
+      }),
       x,
       y,
     );
