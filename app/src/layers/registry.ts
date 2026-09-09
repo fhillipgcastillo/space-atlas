@@ -40,4 +40,13 @@ export const LAYERS: LayerDef[] = [
     maxRadius: 300,
     origin: 'Milky Way',
   },
+  {
+    key: 'cosmic-web',
+    url: '/data/cosmic-web',
+    unit: 'Mly',
+    unitInMetres: LY_IN_METRES * 1e6,
+    minRadius: 200,
+    maxRadius: 14000,
+    origin: 'Milky Way',
+  },
 ];

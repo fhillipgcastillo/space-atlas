@@ -2,6 +2,7 @@ import { Vector3 } from 'three';
 import { Viewer } from './core/viewer.js';
 import { Anchor } from './interaction/anchors.js';
 import { HoverController } from './interaction/hover.js';
+import { buildSearchIndex, FlyTo, type SearchEntry } from './interaction/search.js';
 import { LayerRenderer, opacityForBlend } from './layers/layerRenderer.js';
 import { LAYERS } from './layers/registry.js';
 import { loadIdentifiers, loadNames } from './layers/sidecars.js';
@@ -17,6 +18,7 @@ import type { Tileset } from './tiles/tileset.js';
 import { HoverCard } from './ui/hoverCard.js';
 import { ModeledNotice } from './ui/modeledNotice.js';
 import { ScaleHud } from './ui/scaleHud.js';
+import { SearchBox } from './ui/searchBox.js';
 
 const METRES_PER_PARSEC = 3.0856775814913673e16;
 

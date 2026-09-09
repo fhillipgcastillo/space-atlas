@@ -69,7 +69,23 @@ L3_LOCAL_UNIVERSE = LayerConfig(
     max_points_per_tile=65536,
 )
 
+L4_COSMIC_WEB = LayerConfig(
+    key="cosmic-web",
+    unit="Mly",
+    unit_in_metres=MLY_IN_METRES,
+    min_radius=200.0,
+    max_radius=14000.0,
+    origin="Milky Way",
+    max_points_per_tile=65536,
+)
+
 LAYERS: dict[str, LayerConfig] = {
     layer.key: layer
-    for layer in (L0_SOLAR_SYSTEM, L1_STELLAR_NEIGHBOURHOOD, L2_MILKY_WAY, L3_LOCAL_UNIVERSE)
+    for layer in (
+        L0_SOLAR_SYSTEM,
+        L1_STELLAR_NEIGHBOURHOOD,
+        L2_MILKY_WAY,
+        L3_LOCAL_UNIVERSE,
+        L4_COSMIC_WEB,
+    )
 }

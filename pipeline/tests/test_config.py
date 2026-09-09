@@ -5,12 +5,13 @@ from universe_pipeline.config import (
     L0_SOLAR_SYSTEM,
     L1_STELLAR_NEIGHBOURHOOD,
     L3_LOCAL_UNIVERSE,
+    L4_COSMIC_WEB,
     LAYERS,
 )
 
 
 def test_every_layer_is_registered_under_its_own_key() -> None:
-    for layer in (L0_SOLAR_SYSTEM, L1_STELLAR_NEIGHBOURHOOD, L3_LOCAL_UNIVERSE):
+    for layer in (L0_SOLAR_SYSTEM, L1_STELLAR_NEIGHBOURHOOD, L3_LOCAL_UNIVERSE, L4_COSMIC_WEB):
         assert LAYERS[layer.key] is layer
 
 
@@ -56,3 +57,15 @@ def test_every_layer_inside_the_extragalactic_scale_is_heliocentric() -> None:
     from universe_pipeline.config import L2_MILKY_WAY
 
     assert L2_MILKY_WAY.origin == "Sol"
+
+
+def test_cosmic_web_overlaps_the_local_universe_so_the_crossfade_has_a_band() -> None:
+    assert L4_COSMIC_WEB.unit == L3_LOCAL_UNIVERSE.unit
+    assert L4_COSMIC_WEB.min_radius < L3_LOCAL_UNIVERSE.max_radius
+    assert L4_COSMIC_WEB.max_radius > L3_LOCAL_UNIVERSE.max_radius
+
+
+def test_cosmic_web_radii_are_expressed_in_mly() -> None:
+    assert L4_COSMIC_WEB.min_radius == pytest.approx(200.0)
+    assert L4_COSMIC_WEB.max_radius == pytest.approx(14000.0)
+    assert L4_COSMIC_WEB.origin == L3_LOCAL_UNIVERSE.origin
