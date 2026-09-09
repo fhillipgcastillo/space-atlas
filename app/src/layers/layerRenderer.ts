@@ -1,5 +1,11 @@
 import { Group, type RawShaderMaterial } from 'three';
-import { createPointMaterial, NO_CUTOFF } from '../render/pointMaterial.js';
+import {
+  createPointMaterial,
+  DEEP_MODEL_HUBBLE,
+  DEEP_MODEL_LINEAR,
+  DEEP_MODEL_ORBIT,
+  NO_CUTOFF,
+} from '../render/pointMaterial.js';
 import { getTimeYears, velocityScaleForLayer } from '../render/timeline.js';
 import { FLAG_MODELED } from '../render/typeFlags.js';
 import type { DecodedTile } from '../tiles/format.js';
@@ -9,6 +15,18 @@ import type { ViewState } from '../tiles/traversal.js';
 import { layerScaleFactor, type LayerDef } from './stack.js';
 
 const METRES_PER_PARSEC = 3.0856775814913673e16;
+
+/**
+ * Which deep-time model moves this layer's points: a galactic orbit inside the
+ * Galaxy, the Hubble flow beyond it. AU stays linear — R0 is 1.7e9 AU, which
+ * float32 resolves no finer than 100 AU, and the Sun's orbit is a common
+ * translation of everything in that layer anyway.
+ */
+export function deepModelForLayer(def: LayerDef): number {
+  if (def.unit === 'Mly') return DEEP_MODEL_HUBBLE;
+  if (def.unit === 'ly') return DEEP_MODEL_ORBIT;
+  return DEEP_MODEL_LINEAR;
+}
 
 export function opacityForBlend(role: 'primary' | 'secondary', blend: number): number {
   const clamped = Math.min(Math.max(blend, 0), 1);
@@ -21,6 +39,7 @@ export class LayerRenderer {
   private originCutoff = Number.POSITIVE_INFINITY;
   private cameraCutoff = Number.POSITIVE_INFINITY;
   private timeYears = 0;
+  private deepTime = false;
   private readonly modeledCounts = new WeakMap<DecodedTile, number>();
 
   private constructor(
@@ -31,6 +50,7 @@ export class LayerRenderer {
   ) {
     this.group.add(manager.group);
     this.setUniform('uVelocityScale', velocityScaleForLayer(def.unitInMetres));
+    this.setUniform('uDeepModel', deepModelForLayer(def));
   }
 
   static async create(def: LayerDef, unitInParsecs: number): Promise<LayerRenderer> {
@@ -48,6 +68,12 @@ export class LayerRenderer {
     if (years === this.timeYears) return;
     this.timeYears = years;
     this.setUniform('uTimeYears', years);
+  }
+
+  setDeepTime(on: boolean): void {
+    if (on === this.deepTime) return;
+    this.deepTime = on;
+    this.setUniform('uDeepTime', on ? 1 : 0);
   }
 
   setModeledDim(value: number): void {

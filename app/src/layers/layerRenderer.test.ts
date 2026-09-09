@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { opacityForBlend } from './layerRenderer.js';
+import {
+  DEEP_MODEL_HUBBLE,
+  DEEP_MODEL_LINEAR,
+  DEEP_MODEL_ORBIT,
+} from '../render/pointMaterial.js';
+import { LAYERS } from './registry.js';
+import { deepModelForLayer, opacityForBlend } from './layerRenderer.js';
 
 describe('opacityForBlend', () => {
   it('shows the primary fully when there is no transition', () => {
@@ -33,5 +39,24 @@ describe('opacityForBlend', () => {
         expect(v).toBeLessThanOrEqual(1);
       }
     }
+  });
+});
+
+describe('deepModelForLayer', () => {
+  const modelOf = (key: string): number =>
+    deepModelForLayer(LAYERS.find((layer) => layer.key === key)!);
+
+  it('orbits the layers whose points are stars in the Galaxy', () => {
+    expect(modelOf('stellar-neighbourhood')).toBe(DEEP_MODEL_ORBIT);
+    expect(modelOf('milky-way')).toBe(DEEP_MODEL_ORBIT);
+  });
+
+  it('gives the extragalactic layers the Hubble flow instead', () => {
+    expect(modelOf('local-universe')).toBe(DEEP_MODEL_HUBBLE);
+    expect(modelOf('cosmic-web')).toBe(DEEP_MODEL_HUBBLE);
+  });
+
+  it('leaves the solar system on the linear path', () => {
+    expect(modelOf('solar-system')).toBe(DEEP_MODEL_LINEAR);
   });
 });

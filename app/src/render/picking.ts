@@ -18,7 +18,7 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { decodePickId, MAX_VERTICES_PER_TILE, type PickId } from './pickIds.js';
-import { NO_CUTOFF } from './pointMaterial.js';
+import { DEEP_MODEL_LINEAR, NO_CUTOFF, TIME_POSITION_GLSL } from './pointMaterial.js';
 
 // Sub-pixel stars need a hit area larger than the point they are drawn as, and
 // never smaller than the widest star the visual pass can draw (uMaxSize, 8).
@@ -38,8 +38,8 @@ uniform float uTileSlot;
 uniform float uPickPointSize;
 uniform float uMaxOriginDistance;
 uniform float uMaxCameraDistance;
-uniform float uTimeYears;
-uniform float uVelocityScale;
+
+${TIME_POSITION_GLSL}
 
 in vec3 position;
 in vec3 aVelocity;
@@ -52,7 +52,8 @@ out float vFragDepth;
 void main() {
   // aTypeFlags arrives normalized; FLAG_MODELED is bit 0x10 of the raw byte.
   float flagBits = floor(aTypeFlags * 255.0 + 0.5);
-  vModeled = mod(floor(flagBits / 16.0), 2.0) > 0.5 ? 1u : 0u;
+  float modeled = mod(floor(flagBits / 16.0), 2.0);
+  vModeled = modeled > 0.5 ? 1u : 0u;
 
   vPickId = uint(uTileSlot) * ${MAX_VERTICES_PER_TILE}u + uint(gl_VertexID) + 1u;
   vFragDepth = 1.0;
@@ -64,11 +65,10 @@ void main() {
     return;
   }
 
-  // Same drift and same cutoffs as pointMaterial's vertex shader: a hit has to
-  // be where the point is drawn at time t, and points the visual pass culled
-  // must not resolve at all.
-  vec3 layerPosition =
-      uBboxMin + position * uBboxExtent + aVelocity * uTimeYears * uVelocityScale;
+  // The same shared timePosition call as pointMaterial's vertex shader, and the
+  // same cutoffs: a hit has to be where the point is drawn at time t, and points
+  // the visual pass culled must not resolve at all.
+  vec3 layerPosition = timePosition(uBboxMin + position * uBboxExtent, aVelocity, modeled);
   vec4 viewPosition = modelViewMatrix * vec4(layerPosition, 1.0);
 
   if (length(layerPosition) > uMaxOriginDistance ||
@@ -127,6 +127,10 @@ export function createPickMaterial(): RawShaderMaterial {
       uMaxCameraDistance: { value: NO_CUTOFF },
       uTimeYears: { value: 0 },
       uVelocityScale: { value: 0 },
+      uDeepTime: { value: 0 },
+      uDeepModel: { value: DEEP_MODEL_LINEAR },
+      uLayerParsecsPerUnit: { value: 1 },
+      uSolarMotion: { value: new Vector3() },
     },
     transparent: false,
     // The identifier is bit-exact colour, so nothing may blend it.
@@ -292,6 +296,11 @@ export class PickingPass {
     material.uniforms['uBboxExtent']!.value = source?.['uBboxExtent']?.value ?? new Vector3(1, 1, 1);
     material.uniforms['uTimeYears']!.value = source?.['uTimeYears']?.value ?? 0;
     material.uniforms['uVelocityScale']!.value = source?.['uVelocityScale']?.value ?? 0;
+    material.uniforms['uDeepTime']!.value = source?.['uDeepTime']?.value ?? 0;
+    material.uniforms['uDeepModel']!.value = source?.['uDeepModel']?.value ?? DEEP_MODEL_LINEAR;
+    material.uniforms['uLayerParsecsPerUnit']!.value =
+      source?.['uLayerParsecsPerUnit']?.value ?? 1;
+    material.uniforms['uSolarMotion']!.value = source?.['uSolarMotion']?.value ?? new Vector3();
     material.uniforms['uMaxOriginDistance']!.value =
       source?.['uMaxOriginDistance']?.value ?? NO_CUTOFF;
     material.uniforms['uMaxCameraDistance']!.value =

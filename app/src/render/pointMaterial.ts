@@ -9,6 +9,112 @@ import {
   Vector3,
 } from 'three';
 import { buildColourRamp } from './colourRamp.js';
+import { SOLAR_MOTION_KMS } from './galacticOrbit.js';
+
+export const DEEP_MODEL_LINEAR = 0;
+export const DEEP_MODEL_ORBIT = 1;
+export const DEEP_MODEL_HUBBLE = 2;
+
+/**
+ * Where a point sits at uTimeYears. Included verbatim by both the visual and the
+ * picking vertex shader, which have to place a point identically; the orbit is a
+ * port of galacticOrbit.ts, which stays the reference for the constants and the form.
+ */
+export const TIME_POSITION_GLSL = /* glsl */ `
+uniform float uTimeYears;
+uniform float uVelocityScale;
+uniform float uDeepTime;
+uniform float uDeepModel;
+// This layer's own unit. uParsecsPerUnit follows the active layer instead, for
+// view-space distances, and is the wrong scale for these positions.
+uniform float uLayerParsecsPerUnit;
+uniform vec3 uSolarMotion;
+
+const float R0_PC = 8122.0;
+const float Z_SUN_PC = 20.8;
+const float V_CIRC_KMS = 234.6;
+const float CURVE_SLOPE_KMS_PER_PC = -0.0017;
+const float MIN_CIRCULAR_SPEED_KMS = 20.0;
+// Where the extrapolated curve reaches the floor speed.
+const float FLOOR_RADIUS_PC = 134357.294;
+const float PC_PER_MYR_PER_KMS = 1.0227121650456950;
+// sqrt(4 pi G rho0), per Myr.
+const float NU_PER_MYR = 0.0751863320320799;
+const float T_HUBBLE_YEARS = 13.97e9;
+
+float circularSpeedKms(float radiusPc) {
+  return max(V_CIRC_KMS + CURVE_SLOPE_KMS_PER_PC * (radiusPc - R0_PC), MIN_CIRCULAR_SPEED_KMS);
+}
+
+float epicyclicFrequency(float radiusPc) {
+  float omega = circularSpeedKms(radiusPc) / radiusPc;
+  float slope = radiusPc < FLOOR_RADIUS_PC ? CURVE_SLOPE_KMS_PER_PC : 0.0;
+  return sqrt(2.0 * omega * (omega + slope));
+}
+
+// The fixed point contracts by about 0.06 a step, so eight is past float precision.
+float guidingRadius(float lzMagnitude) {
+  float radius = lzMagnitude / (V_CIRC_KMS * PC_PER_MYR_PER_KMS);
+  for (int i = 0; i < 8; i++) {
+    radius = lzMagnitude / (circularSpeedKms(radius) * PC_PER_MYR_PER_KMS);
+  }
+  return radius;
+}
+
+// GLSL trig is only specified to be accurate inside one turn, and an inner-disk
+// point runs through twenty of them in 250 Myr.
+float wrapAngle(float angle) {
+  return angle - 6.283185307179586 * floor(angle / 6.283185307179586 + 0.5);
+}
+
+vec3 galacticOrbit(vec3 posPc, vec3 velocityKms, float tMyr) {
+  vec3 v = velocityKms * PC_PER_MYR_PER_KMS;
+  float r0 = length(posPc.xy);
+  float lz = posPc.x * v.y - posPc.y * v.x;
+  // |Lz|: the Sun's Lz is negative here, and a signed guiding radius puts the
+  // star on the far side of the Galaxy.
+  float rg = guidingRadius(abs(lz));
+  if (r0 <= 0.0 || rg <= 0.0) return posPc + v * tMyr;
+
+  float vr0 = dot(posPc.xy, v.xy) / r0;
+  float phi0 = atan(posPc.y, posPc.x);
+  float kappa = epicyclicFrequency(rg) * PC_PER_MYR_PER_KMS;
+  float omegaG = lz / (rg * rg);
+  float amplitude = length(vec2(r0 - rg, vr0 / kappa));
+  float a0 = amplitude > 0.0 ? atan(-vr0 / kappa, r0 - rg) : 0.0;
+
+  float phase = wrapAngle(kappa * tMyr + a0);
+  float r = rg + amplitude * cos(phase);
+  float phi = wrapAngle(phi0 + omegaG * tMyr
+      - (2.0 * omegaG * amplitude) / (kappa * rg) * (sin(phase) - sin(a0)));
+  float vertical = wrapAngle(NU_PER_MYR * tMyr);
+  float z = posPc.z * cos(vertical) + (v.z / NU_PER_MYR) * sin(vertical);
+  return vec3(r * cos(phi), r * sin(phi), z);
+}
+
+vec3 circularVelocityKms(vec3 posPc) {
+  float r = length(posPc.xy);
+  if (r <= 0.0) return vec3(0.0);
+  return vec3(posPc.y, -posPc.x, 0.0) * (circularSpeedKms(r) / r);
+}
+
+vec3 timePosition(vec3 basePosition, vec3 velocityKms, float modeled) {
+  vec3 drift = velocityKms * uTimeYears * uVelocityScale;
+  if (uDeepTime < 0.5 || uDeepModel < 0.5) return basePosition + drift;
+  if (uDeepModel > 1.5) {
+    return basePosition * (1.0 + uTimeYears / T_HUBBLE_YEARS) + drift;
+  }
+
+  vec3 helioPc = basePosition * uLayerParsecsPerUnit;
+  vec3 galPc = vec3(helioPc.x - R0_PC, helioPc.y, helioPc.z + Z_SUN_PC);
+  vec3 galVelocity = modeled > 0.5 ? circularVelocityKms(galPc) : velocityKms + uSolarMotion;
+  vec3 orbit = galacticOrbit(galPc, galVelocity, uTimeYears * 1e-6);
+  // Every modeled point has vz = 0, so one shared vertical phase would flatten
+  // the whole population into a plane every quarter period.
+  if (modeled > 0.5) orbit.z = galPc.z;
+  return vec3(orbit.x + R0_PC, orbit.y, orbit.z - Z_SUN_PC) / uLayerParsecsPerUnit;
+}
+`;
 
 const VERTEX = /* glsl */ `
 precision highp float;
@@ -28,8 +134,8 @@ uniform float uShowModeled;
 uniform float uFluxWeight;
 uniform float uMaxOriginDistance;
 uniform float uMaxCameraDistance;
-uniform float uTimeYears;
-uniform float uVelocityScale;
+
+${TIME_POSITION_GLSL}
 
 in vec3 position;
 in vec3 aVelocity;
@@ -55,8 +161,7 @@ void main() {
 
   // The drift lands before the distance term, so a star's apparent magnitude
   // tracks where it is at time t, not where it was at t = 0.
-  vec3 layerPosition =
-      uBboxMin + position * uBboxExtent + aVelocity * uTimeYears * uVelocityScale;
+  vec3 layerPosition = timePosition(uBboxMin + position * uBboxExtent, aVelocity, modeled);
   vec4 viewPosition = modelViewMatrix * vec4(layerPosition, 1.0);
 
   // Hard binary cutoff by design (spec 6.1): no fade band, no alpha ramp.
@@ -169,6 +274,10 @@ export function createPointMaterial(unitInParsecs: number): RawShaderMaterial {
       uMaxCameraDistance: { value: NO_CUTOFF },
       uTimeYears: { value: 0 },
       uVelocityScale: { value: 0 },
+      uDeepTime: { value: 0 },
+      uDeepModel: { value: DEEP_MODEL_LINEAR },
+      uLayerParsecsPerUnit: { value: unitInParsecs },
+      uSolarMotion: { value: new Vector3(...SOLAR_MOTION_KMS) },
       uLayerOpacity: { value: 1 },
       uColourRamp: { value: ramp },
     },
