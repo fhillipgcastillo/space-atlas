@@ -15,6 +15,11 @@ from universe_pipeline.config import L1_STELLAR_NEIGHBOURHOOD, LAYERS, LayerConf
 from universe_pipeline.records import CLASS_STAR, ObjectRecord, pack_type
 from universe_pipeline.sources.cosmicflows import fetch_cosmicflows, normalise_cosmicflows
 from universe_pipeline.sources.gaia import fetch_gaia_chunk, normalise_gaia
+from universe_pipeline.sources.milky_way_model import build_modeled_population
+from universe_pipeline.sources.milky_way_objects import (
+    fetch_milky_way_objects,
+    normalise_milky_way_objects,
+)
 from universe_pipeline.sources.solar_system import build_solar_system
 
 # Gaia source_id encodes HEALPix level 12; chunking the level-8 index range
@@ -78,6 +83,28 @@ def _concat(records: list[ObjectRecord]) -> ObjectRecord:
     )
 
 
+def _empty_record() -> ObjectRecord:
+    return ObjectRecord(
+        position_ly=np.zeros((0, 3), dtype=np.float64),
+        velocity_km_s=np.zeros((0, 3), dtype=np.float32),
+        abs_mag=np.zeros(0, dtype=np.float32),
+        colour_index=np.zeros(0, dtype=np.uint16),
+        type_flags=np.zeros(0, dtype=np.uint8),
+        catalog_id=np.zeros(0, dtype=np.uint64),
+    )
+
+
+def compose_milky_way(
+    layer: LayerConfig, modeled_count: int, table: Mapping[str, np.ndarray] | None
+) -> tuple[ObjectRecord, list[str]]:
+    """Real objects first, so they hold the low localIds the name sidecar indexes."""
+    real, names = (
+        normalise_milky_way_objects(table, layer) if table is not None else (_empty_record(), [])
+    )
+    modeled = build_modeled_population(layer, modeled_count)
+    return _concat([real, modeled]), names
+
+
 def _build_one(key: str, args: argparse.Namespace) -> None:
     layer = LAYERS[key]
     names: list[str] | None = None
@@ -91,6 +118,10 @@ def _build_one(key: str, args: argparse.Namespace) -> None:
     elif key == "local-universe":
         record, names = normalise_cosmicflows(fetch_cosmicflows(args.cache), layer)
         prefix = "PGC"
+    elif key == "milky-way":
+        record, names = compose_milky_way(
+            layer, args.modeled_count, fetch_milky_way_objects(args.cache)
+        )
     elif key == "stellar-neighbourhood":
         record = _concat(fetch_layer_chunks(layer, args.chunks, args.cache, args.workers))
         prefix = "Gaia DR3"
@@ -119,6 +150,12 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         metavar="COUNT",
         help="skip the real source and bake COUNT deterministic placeholder points",
+    )
+    parser.add_argument(
+        "--modeled-count",
+        type=int,
+        default=4_000_000,
+        help="size of the modeled Milky Way stellar population",
     )
     parser.add_argument("--chunks", type=int, default=48, help="number of Gaia sky chunks")
     parser.add_argument("--workers", type=int, default=6, help="concurrent archive queries")

@@ -7,6 +7,7 @@ import pytest
 from universe_pipeline.cli import HEALPIX8_TOTAL, _synthetic, fetch_layer_chunks
 from universe_pipeline.config import L0_SOLAR_SYSTEM, L3_LOCAL_UNIVERSE, LayerConfig
 from universe_pipeline.config import L1_STELLAR_NEIGHBOURHOOD as L1
+from universe_pipeline.records import FLAG_MODELED
 
 
 def fake_table(marker: float) -> dict[str, np.ndarray]:
@@ -97,3 +98,27 @@ def test_synthetic_points_stay_inside_the_layer_shell(layer: LayerConfig) -> Non
     radius = np.linalg.norm(record.position_ly, axis=1)
     assert np.all(radius >= layer.min_radius)
     assert np.all(radius <= layer.max_radius)
+
+
+def milky_way_table() -> dict[str, np.ndarray]:
+    return {
+        "ra": np.array([266.41684, 10.0, 200.0]),
+        "dec": np.array([-29.00781, 20.0, -40.0]),
+        "distance_ly": np.array([26670.0, 20000.0, 5000.0]),
+        "abs_mag": np.array([np.nan, -7.5, np.nan]),
+        "kind": np.array([2, 0, 1], dtype=np.uint8),
+        "name": np.array(["Sagittarius A*", "NGC 104", "Open cluster"]),
+    }
+
+
+def test_milky_way_puts_real_objects_before_modeled_ones() -> None:
+    from universe_pipeline.cli import compose_milky_way
+    from universe_pipeline.config import L2_MILKY_WAY
+
+    record, names = compose_milky_way(L2_MILKY_WAY, modeled_count=500, table=milky_way_table())
+
+    # Names cover a prefix of the record and nothing beyond it.
+    assert len(names) == 3
+    assert len(names) < len(record)
+    assert not np.any(record.type_flags[: len(names)] & FLAG_MODELED)
+    assert np.all(record.type_flags[len(names) :] & FLAG_MODELED)
