@@ -47,8 +47,10 @@ HALO_POWER_LAW_INDEX = 3.5
 HALO_INNER_RADIUS_LY = 3000.0
 
 # Each point stands for tens of thousands of stars and carries their combined
-# light, not one star's.
-NOMINAL_MODELED_ABS_MAG = -6.0
+# light, not one star's. -4.0 is the knee of a measured sweep: brighter
+# saturates the near view, dimmer changes nothing beyond 120,000 ly because
+# the shader's alpha floor takes over there.
+NOMINAL_MODELED_ABS_MAG = -4.0
 NOMINAL_MODELED_COLOUR = 30000
 
 MODELED_TYPE_FLAGS = pack_type(
