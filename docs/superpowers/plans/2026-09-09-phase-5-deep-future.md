@@ -117,6 +117,33 @@ z(t)   = z0 cos(nu t) + (vz0/nu) sin(nu t)
 Assert against the *numbers in the table above*, not against whatever the code
 happens to produce.
 
+## Open lead: the azimuth truncation (do NOT act on this in Task 2)
+
+Task 1 established that the 250 Myr error is dominated by `phi_dot =
+Omega_g (1 - 2X/Rg)` being a first-order truncation of `Lz/r^2`, and
+proposed `Omega_eff = Omega_g (1 + 1.5 (A/Rg)^2)` as the standard
+second-order fix. Measured against RK4, that makes it **worse**: 4.86% ->
+11.78% at 250 Myr. It was proposed but correctly not applied.
+
+Scanning the coefficient instead:
+
+| coefficient | 100 Myr | 250 Myr |
+|---|---|---|
+| 0 (shipped) | 2.45% | 4.86% |
+| +1.5 (the textbook second-order term) | 5.12% | 11.78% |
+| **-0.75** | **1.29%** | **1.49%** |
+
+`-3/4` is a 3.3x improvement and suspiciously clean, but it is the
+opposite sign to the derivation that motivates it, which means the
+derivation is wrong somewhere and the number is currently just a fit.
+**Shipping it would be a fudge factor, which this design does not
+allow.** The shipped model stays first-order at a disclosed 5.4%.
+
+Worth someone deriving properly: whether `Rg` from `Lz = Rg v_c(Rg)` is
+the right expansion centre, and whether the amplitude `A` should be the
+true radial excursion rather than the epicyclic one. If it derives, the
+deep range could extend well past one galactic year.
+
 ---
 
 ## Task 2: The orbit in the vertex shader
