@@ -28,11 +28,15 @@ async function waitForIdleLoader(page: Page): Promise<number> {
 // - the Earth anchor and the modeled notice - into the count. The drawing buffer
 // has no preserveDrawingBuffer, so it is only readable inside the task that drew
 // it: render and read in one go.
+// Rendering the scene straight to the canvas would measure a frame nobody sees:
+// every material is a RawShaderMaterial, so three injects no tone mapping and
+// the direct render carries neither bloom nor exposure. Only the composer chain
+// produces the displayed image.
 function measureLuminance(page: Page): Promise<{ mean: number; litFraction: number }> {
   return page.evaluate(() => {
     const { viewer } = window.__universeMap!;
-    viewer.renderer.setRenderTarget(null);
-    viewer.renderer.render(viewer.scene, viewer.camera);
+    // Viewer keeps the composer private; there is no public accessor yet.
+    (viewer as unknown as { composer: { render: () => void } }).composer.render();
     const gl = viewer.renderer.getContext();
     const width = viewer.renderer.domElement.width;
     const height = viewer.renderer.domElement.height;
@@ -435,10 +439,10 @@ test('the sparse gap between stars and galaxies is gone', async ({ page }) => {
       `blank ${blank.mean.toFixed(3)} over ${(blank.litFraction * 100).toFixed(1)}%`,
   );
   // Before this layer existed the whole 5,000 - 300,000 ly span rendered below
-  // 0.2 mean luminance. Measured with this helper it now reads 11.44 at 59.2%
-  // lit at 30,000 ly, 5.80 at 43.6% at 50,000 ly, and 1.67 at 12.4% out at
-  // 120,000 ly. These bounds sit an order of magnitude above the old regime and
-  // well under the new one, so they discriminate between the two rather than
+  // 0.2 mean luminance. Measured through the composer it now reads 18.48 at
+  // 46.0% lit at 30,000 ly, 18.81 at 56.0% at 50,000 ly, and 15.63 at 59.7% out
+  // at 120,000 ly. These bounds sit an order of magnitude above the old regime
+  // and well under the new one, so they discriminate between the two rather than
   // merely rejecting a wholly black frame.
   expect(lit.mean).toBeGreaterThan(1.5);
   expect(lit.litFraction).toBeGreaterThan(0.03);
