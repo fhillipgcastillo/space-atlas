@@ -101,8 +101,10 @@ area you touched:
 | `test:e2e:perf` | `@perf` | 1 | LOD or the byte budget |
 | `test:e2e:fast` | all but `@perf` | 20 | anything, when you can skip the 3-minute perf test |
 
-`npm run test:e2e:list` prints every test with its tags. Tags compose, so a
-test can belong to more than one group; the groups above overlap deliberately.
+`npm run test:e2e:list` lists every test by name; it does not print tags, so to
+see what a group covers run that script with `-- --grep @tag --list`. Tags
+compose, so a test can belong to more than one group and the groups above
+overlap deliberately.
 
 Run the full suite before tagging a phase or shipping. Unit tests
 (`npm test`, ~2 s) and `npm run typecheck` are cheap enough to run on
