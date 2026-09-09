@@ -23,15 +23,30 @@ uniform float uMinSize;
 uniform float uMaxSize;
 uniform float uAlphaScale;
 uniform float uParsecsPerUnit;
+uniform float uModeledDim;
+uniform float uShowModeled;
 
 in vec3 position;
 in float aColourIndex;
 in float aAbsMag;
+in float aTypeFlags;
 
 out float vColourIndex;
 out float vAlpha;
 
 void main() {
+  // aTypeFlags arrives normalized; FLAG_MODELED is bit 0x10 of the raw byte.
+  float flagBits = floor(aTypeFlags * 255.0 + 0.5);
+  float modeled = mod(floor(flagBits / 16.0), 2.0);
+
+  if (modeled > 0.5 && uShowModeled < 0.5) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    vColourIndex = 0.0;
+    vAlpha = 0.0;
+    return;
+  }
+
   vec3 layerPosition = uBboxMin + position * uBboxExtent;
   vec4 viewPosition = modelViewMatrix * vec4(layerPosition, 1.0);
 
@@ -40,7 +55,9 @@ void main() {
   float brightness = pow(10.0, -0.4 * apparentMag);
 
   gl_PointSize = clamp(uSizeScale * sqrt(brightness) * uPixelRatio, uMinSize, uMaxSize);
-  vAlpha = clamp(brightness * uAlphaScale, 0.02, 1.0);
+  // The dim factor is applied after the clamp: below the 0.02 floor an
+  // undimmed and a dimmed modeled point would otherwise emit the same light.
+  vAlpha = clamp(brightness * uAlphaScale, 0.02, 1.0) * mix(1.0, uModeledDim, modeled);
   vColourIndex = aColourIndex;
 
   gl_Position = projectionMatrix * viewPosition;
@@ -73,6 +90,9 @@ void main() {
 // Chosen on real hardware. Measured through a software rasterizer at 8.2M
 // points, 1000 ly: 800 gives mean luminance ~44 and ~83% lit pixels.
 const DEFAULT_ALPHA_SCALE = 8.0e2;
+
+/** Modeled points emit this fraction of the light a measured point of the same magnitude would. */
+export const DEFAULT_MODELED_DIM = 0.45;
 
 let alphaScale = DEFAULT_ALPHA_SCALE;
 // Materials handed out by createPointMaterial. tileMesh clones one of these per
@@ -113,6 +133,8 @@ export function createPointMaterial(unitInParsecs: number): RawShaderMaterial {
       uMaxSize: { value: 8.0 },
       uAlphaScale: { value: alphaScale },
       uParsecsPerUnit: { value: unitInParsecs },
+      uModeledDim: { value: DEFAULT_MODELED_DIM },
+      uShowModeled: { value: 1 },
       uLayerOpacity: { value: 1 },
       uColourRamp: { value: ramp },
     },

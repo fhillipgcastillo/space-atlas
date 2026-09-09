@@ -4,6 +4,7 @@ import {
   Points,
   type RawShaderMaterial,
   Sphere,
+  Uint8BufferAttribute,
   Uint16BufferAttribute,
   Vector3,
 } from 'three';
@@ -16,6 +17,7 @@ export function createTileMesh(tile: DecodedTile, material: RawShaderMaterial): 
   geometry.setAttribute('position', new Uint16BufferAttribute(tile.positionQuantized, 3, true));
   geometry.setAttribute('aColourIndex', new Uint16BufferAttribute(tile.colorIndex, 1, true));
   geometry.setAttribute('aAbsMag', new Float16BufferAttribute(tile.absMag, 1));
+  geometry.setAttribute('aTypeFlags', new Uint8BufferAttribute(tile.typeFlags, 1, true));
 
   const min = new Vector3(tile.bboxMin[0]!, tile.bboxMin[1]!, tile.bboxMin[2]!);
   const max = new Vector3(tile.bboxMax[0]!, tile.bboxMax[1]!, tile.bboxMax[2]!);

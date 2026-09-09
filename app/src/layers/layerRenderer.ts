@@ -1,5 +1,7 @@
 import { Group, type RawShaderMaterial } from 'three';
 import { createPointMaterial } from '../render/pointMaterial.js';
+import { FLAG_MODELED } from '../render/typeFlags.js';
+import type { DecodedTile } from '../tiles/format.js';
 import { TileManager } from '../tiles/tileManager.js';
 import { fetchTileset, type Tileset } from '../tiles/tileset.js';
 import type { ViewState } from '../tiles/traversal.js';
@@ -15,6 +17,7 @@ export function opacityForBlend(role: 'primary' | 'secondary', blend: number): n
 export class LayerRenderer {
   readonly group = new Group();
   private opacity = 1;
+  private readonly modeledCounts = new WeakMap<DecodedTile, number>();
 
   private constructor(
     readonly def: LayerDef,
@@ -30,6 +33,30 @@ export class LayerRenderer {
     const material = createPointMaterial(unitInParsecs);
     const manager = new TileManager(def.url, tileset, material);
     return new LayerRenderer(def, tileset, manager, material);
+  }
+
+  get currentOpacity(): number {
+    return this.opacity;
+  }
+
+  setModeledDim(value: number): void {
+    this.setUniform('uModeledDim', Math.min(Math.max(value, 0), 1));
+  }
+
+  setShowModeled(show: boolean): void {
+    this.setUniform('uShowModeled', show ? 1 : 0);
+  }
+
+  /** Modeled share of the points currently drawn, so the notice can report it. */
+  modeledFraction(): number {
+    let total = 0;
+    let modeled = 0;
+    for (const { tile, mesh } of this.manager.tilesBySlot.values()) {
+      if (!mesh.visible) continue;
+      total += tile.pointCount;
+      modeled += this.modeledCountOf(tile);
+    }
+    return total > 0 ? modeled / total : 0;
   }
 
   setOpacity(value: number): void {
@@ -54,6 +81,17 @@ export class LayerRenderer {
 
   dispose(): void {
     this.manager.dispose();
+  }
+
+  private modeledCountOf(tile: DecodedTile): number {
+    const cached = this.modeledCounts.get(tile);
+    if (cached !== undefined) return cached;
+    let count = 0;
+    for (let i = 0; i < tile.pointCount; i++) {
+      if (((tile.typeFlags[i] ?? 0) & FLAG_MODELED) !== 0) count++;
+    }
+    this.modeledCounts.set(tile, count);
+    return count;
   }
 
   // createTileMesh clones this material per tile, so the base has to be written

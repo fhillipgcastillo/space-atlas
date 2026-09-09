@@ -37,12 +37,27 @@ uniform float uTileSlot;
 uniform float uPickPointSize;
 
 in vec3 position;
+in float aTypeFlags;
 
 flat out uint vPickId;
+flat out uint vModeled;
 out float vFragDepth;
 
 void main() {
+  // aTypeFlags arrives normalized; FLAG_MODELED is bit 0x10 of the raw byte.
+  float flagBits = floor(aTypeFlags * 255.0 + 0.5);
+  vModeled = mod(floor(flagBits / 16.0), 2.0) > 0.5 ? 1u : 0u;
+
   vPickId = uint(uTileSlot) * ${MAX_VERTICES_PER_TILE}u + uint(gl_VertexID) + 1u;
+  vFragDepth = 1.0;
+
+  if (vModeled == 1u) {
+    // A modeled point is not a measurement, so it must never resolve as a hit.
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    return;
+  }
+
   gl_PointSize = uPickPointSize;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(uBboxMin + position * uBboxExtent, 1.0);
   vFragDepth = 1.0 + gl_Position.w;
@@ -56,11 +71,14 @@ precision highp int;
 uniform float uLogDepthBufFC;
 
 flat in uint vPickId;
+flat in uint vModeled;
 in float vFragDepth;
 
 out vec4 fragColour;
 
 void main() {
+  if (vModeled == 1u) discard;
+
   // Four decades of depth range: a linear 1/z buffer resolves only tens of
   // light-years at kiloparsec distances, so two stars on one line of sight tie
   // and the draw order decides the hit. Logarithmic depth keeps them apart.

@@ -15,6 +15,7 @@ import { PickingPass } from './render/picking.js';
 import type { TileManager } from './tiles/tileManager.js';
 import type { Tileset } from './tiles/tileset.js';
 import { HoverCard } from './ui/hoverCard.js';
+import { ModeledNotice } from './ui/modeledNotice.js';
 
 const METRES_PER_PARSEC = 3.0856775814913673e16;
 
@@ -31,6 +32,7 @@ declare global {
       layers: LayerRenderer[];
       selection: () => LayerSelection;
       activeLayer: () => LayerDef;
+      modeledNotice: ModeledNotice;
     };
   }
 }
@@ -91,6 +93,8 @@ async function boot(): Promise<void> {
   );
 
   const earth = new Anchor('Earth', new Vector3(0, 0, 0), document.body);
+  const modeledNotice = new ModeledNotice(document.body);
+  const modeledRenderers = renderers.filter((r) => r.def.key === 'milky-way');
 
   let selection = selectLayers(0, LAYERS);
   const frameTimes: number[] = [];
@@ -133,6 +137,12 @@ async function boot(): Promise<void> {
     }
 
     earth.update(viewer.camera, window.innerWidth, window.innerHeight);
+
+    const showing = modeledRenderers.filter((r) => r.currentOpacity > 0);
+    if (showing.length > 0) {
+      modeledNotice.setFraction(Math.max(...showing.map((r) => r.modeledFraction())));
+    }
+    modeledNotice.setVisible(showing.length > 0);
   });
 
   viewer.start();
@@ -151,6 +161,7 @@ async function boot(): Promise<void> {
     layers: renderers,
     selection: () => selection,
     activeLayer: () => active,
+    modeledNotice,
   };
   console.info(`layers loaded: ${renderers.map((r) => r.def.key).join(', ')}`);
 }
