@@ -2,6 +2,7 @@ import { Vector3 } from 'three';
 import { Viewer } from './core/viewer.js';
 import { Anchor } from './interaction/anchors.js';
 import { HoverController } from './interaction/hover.js';
+import { buildCandidates, declutter, LabelLayer, type NamedObject } from './interaction/labels.js';
 import { buildSearchIndex, FlyTo, type SearchEntry } from './interaction/search.js';
 import { LayerRenderer, opacityForBlend } from './layers/layerRenderer.js';
 import { LAYERS } from './layers/registry.js';
@@ -34,6 +35,7 @@ declare global {
       hover: HoverController;
       identifiersReady: Promise<void>;
       layers: LayerRenderer[];
+      labelObjects: Map<string, NamedObject[]>;
       selection: () => LayerSelection;
       activeLayer: () => LayerDef;
       modeledNotice: ModeledNotice;
@@ -100,6 +102,12 @@ async function boot(): Promise<void> {
   const earth = new Anchor('Earth', new Vector3(0, 0, 0), document.body);
   const modeledNotice = new ModeledNotice(document.body);
   const scaleHud = new ScaleHud(document.body);
+  const labelLayer = new LabelLayer(document.body);
+  const LABEL_BOX = { width: 120, height: 16 };
+  const MAX_LABELS = 40;
+  // Keyed by layer, so only what is on screen contributes. The source is the
+  // names index, so modeled points can never appear here.
+  const labelObjects = new Map<string, NamedObject[]>();
   const rangeControls = new RangeControls(document.body);
   const modeledRenderers = renderers.filter((r) => r.def.key === 'milky-way');
 
@@ -153,6 +161,24 @@ async function boot(): Promise<void> {
 
     earth.update(viewer.camera, window.innerWidth, window.innerHeight);
 
+    const named = [
+      ...(labelObjects.get(selection.primary.key) ?? []),
+      ...(selection.secondary ? (labelObjects.get(selection.secondary.key) ?? []) : []),
+    ];
+    labelLayer.update(
+      declutter(
+        buildCandidates(
+          named,
+          viewer.camera,
+          window.innerWidth,
+          window.innerHeight,
+          active.unitInMetres,
+        ),
+        LABEL_BOX,
+        MAX_LABELS,
+      ),
+    );
+
     const showing = modeledRenderers.filter((r) => r.currentOpacity > 0);
     if (showing.length > 0) {
       modeledNotice.setFraction(Math.max(...showing.map((r) => r.modeledFraction())));
@@ -174,7 +200,14 @@ async function boot(): Promise<void> {
   void buildSearchIndex(LAYERS, (entries) => {
     // Spreading instead would overflow the stack: the cosmic-web layer alone
     // lands 423,578 names in one call.
-    for (const entry of entries) searchEntries.push(entry);
+    for (const entry of entries) {
+      searchEntries.push(entry);
+      const def = LAYERS.find((l) => l.key === entry.layerKey);
+      if (!def) continue;
+      const bucket = labelObjects.get(entry.layerKey) ?? [];
+      bucket.push({ name: entry.name, position: entry.position, unitInMetres: def.unitInMetres });
+      labelObjects.set(entry.layerKey, bucket);
+    }
     searchBox.setEntries(searchEntries);
   });
 
@@ -192,6 +225,7 @@ async function boot(): Promise<void> {
     hover,
     identifiersReady,
     layers: renderers,
+    labelObjects,
     selection: () => selection,
     activeLayer: () => active,
     modeledNotice,
