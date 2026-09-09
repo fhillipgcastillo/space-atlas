@@ -61,12 +61,12 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('loads the tileset and reports the baked point count', async ({ page }) => {
+test('loads the tileset and reports the baked point count', { tag: ['@core'] }, async ({ page }) => {
   const pointCount = await page.evaluate(() => window.__universeMap!.tileset.pointCount);
   expect(pointCount).toBeGreaterThan(1_000_000);
 });
 
-test('streams tiles in as the camera approaches', async ({ page }) => {
+test('streams tiles in as the camera approaches', { tag: ['@core', '@streaming'] }, async ({ page }) => {
   const before = await waitForIdleLoader(page);
 
   await page.evaluate(() => {
@@ -79,7 +79,7 @@ test('streams tiles in as the camera approaches', async ({ page }) => {
   expect(after).toBeGreaterThan(before);
 });
 
-test('renders something other than a black screen', async ({ page }) => {
+test('renders something other than a black screen', { tag: ['@core', '@render'] }, async ({ page }) => {
   await waitForIdleLoader(page);
   const canvas = page.locator('canvas');
   // A canvas element screenshot still paints the DOM drawn over it into the
@@ -102,11 +102,11 @@ test('renders something other than a black screen', async ({ page }) => {
   expect(withStars.byteLength).toBeGreaterThan(withoutStars.byteLength * 50);
 });
 
-test('shows the permanent Earth anchor', async ({ page }) => {
+test('shows the permanent Earth anchor', { tag: ['@labels'] }, async ({ page }) => {
   await expect(page.locator('[data-anchor="Earth"]')).toBeVisible();
 });
 
-test('identifies the star under the cursor, not merely some star', async ({ page }) => {
+test('identifies the star under the cursor, not merely some star', { tag: ['@hover'] }, async ({ page }) => {
   await waitForIdleLoader(page);
   await page.evaluate(() => window.__universeMap!.identifiersReady);
 
@@ -180,7 +180,7 @@ test('identifies the star under the cursor, not merely some star', async ({ page
 // Five layers load 320 tiles at roughly 700 ms a frame under SwiftShader, so
 // this one sweeps for longer than the default 3-minute cap allows. The bound
 // raised here is wall-clock only; every assertion below is unchanged.
-test('frame cost scales with the points drawn and streaming converges', async ({ page }) => {
+test('frame cost scales with the points drawn and streaming converges', { tag: ['@perf'] }, async ({ page }) => {
   test.setTimeout(420_000);
   await waitForIdleLoader(page);
 
@@ -319,7 +319,7 @@ test('frame cost scales with the points drawn and streaming converges', async ({
   expect(settled.after).toBe(settled.before);
 });
 
-test('crosses from the stellar layer out to the local universe', async ({ page }) => {
+test('crosses from the stellar layer out to the local universe', { tag: ['@layers'] }, async ({ page }) => {
   const start = await page.evaluate(() => window.__universeMap!.activeLayer().key);
   expect(start).toBe('stellar-neighbourhood');
 
@@ -349,7 +349,7 @@ test('crosses from the stellar layer out to the local universe', async ({ page }
   expect(crossing.end).toBe('cosmic-web');
 });
 
-test('shows the solar system when the camera is close to the Sun', async ({ page }) => {
+test('shows the solar system when the camera is close to the Sun', { tag: ['@layers'] }, async ({ page }) => {
   const key = await page.evaluate(async () => {
     const { viewer, activeLayer } = window.__universeMap!;
     viewer.camera.position.set(0, 0, 1e-6);
@@ -360,7 +360,7 @@ test('shows the solar system when the camera is close to the Sun', async ({ page
   expect(key).toBe('solar-system');
 });
 
-test('every layer keeps its own unit', async ({ page }) => {
+test('every layer keeps its own unit', { tag: ['@layers'] }, async ({ page }) => {
   const units = await page.evaluate(() =>
     window.__universeMap!.layers.map((l) => `${l.def.key}:${l.def.unit}`),
   );
@@ -373,7 +373,7 @@ test('every layer keeps its own unit', async ({ page }) => {
   ]);
 });
 
-test('the milky way layer takes over between the stars and the galaxies', async ({ page }) => {
+test('the milky way layer takes over between the stars and the galaxies', { tag: ['@layers'] }, async ({ page }) => {
   const keys = await page.evaluate(async () => {
     const { viewer, activeLayer } = window.__universeMap!;
     const seen: string[] = [];
@@ -389,7 +389,7 @@ test('the milky way layer takes over between the stars and the galaxies', async 
   expect(keys).toContain('milky-way');
 });
 
-test('the modeled population is announced whenever it is visible', async ({ page }) => {
+test('the modeled population is announced whenever it is visible', { tag: ['@modeled'] }, async ({ page }) => {
   await page.evaluate(async () => {
     window.__universeMap!.viewer.camera.position.set(0, 0, 50000);
     await new Promise((r) => setTimeout(r, 4000));
@@ -397,7 +397,7 @@ test('the modeled population is announced whenever it is visible', async ({ page
   await expect(page.getByTestId('modeled-notice')).toBeVisible();
 });
 
-test('hovering never reports a modeled object', async ({ page }) => {
+test('hovering never reports a modeled object', { tag: ['@hover', '@modeled'] }, async ({ page }) => {
   const probe = await page.evaluate(async () => {
     const { viewer, manager, picking, hover } = window.__universeMap!;
     viewer.camera.position.set(0, 0, 50000);
@@ -430,7 +430,7 @@ test('hovering never reports a modeled object', async ({ page }) => {
   expect(probe.modeledHits).toBe(0);
 });
 
-test('the sparse gap between stars and galaxies is gone', async ({ page }) => {
+test('the sparse gap between stars and galaxies is gone', { tag: ['@layers', '@render'] }, async ({ page }) => {
   await page.evaluate(async () => {
     window.__universeMap!.viewer.camera.position.set(0, 0, 50000);
     await new Promise((r) => setTimeout(r, 6000));
@@ -512,14 +512,14 @@ function sampleFrame(page: Page): Promise<{ mean: number; changed: number }> {
   });
 }
 
-test('the time control opens at present day', async ({ page }) => {
+test('the time control opens at present day', { tag: ['@time'] }, async ({ page }) => {
   await expect(page.getByTestId('time-controls')).toBeVisible();
   await expect(page.getByTestId('time-readout')).toHaveText('present day');
   expect(await clockYears(page)).toBe(0);
   await expect(page.getByTestId('time-disclosure')).not.toBeVisible();
 });
 
-test('dragging the time slider moves the field', async ({ page }) => {
+test('dragging the time slider moves the field', { tag: ['@time', '@render'] }, async ({ page }) => {
   await waitForIdleLoader(page);
   // Exposure adaptation rescales the whole frame between the two grabs, which
   // would read as motion; pin it so the diff measures only the field.
@@ -548,7 +548,7 @@ test('dragging the time slider moves the field', async ({ page }) => {
   expect(after.changed).toBeGreaterThan(0.02);
 });
 
-test('the disclosure appears off present day and goes away at zero', async ({ page }) => {
+test('the disclosure appears off present day and goes away at zero', { tag: ['@time'] }, async ({ page }) => {
   // Also the check that the clock does not survive the navigation in beforeEach:
   // the test above leaves it at MAX_YEARS.
   expect(await clockYears(page)).toBe(0);
@@ -569,7 +569,7 @@ test('the disclosure appears off present day and goes away at zero', async ({ pa
   expect(await clockYears(page)).toBe(0);
 });
 
-test('the modeled population stands still while measured stars move', async ({ page }) => {
+test('the modeled population stands still while measured stars move', { tag: ['@time', '@modeled'] }, async ({ page }) => {
   test.setTimeout(300_000);
   // Both populations are on screen here: the stellar layer and the modeled
   // milky-way layer overlap across 3,000-5,000 ly.
@@ -696,7 +696,7 @@ test('the modeled population stands still while measured stars move', async ({ p
   expect(measured.moved).toBeGreaterThan(5);
 });
 
-test('hover picks the field where it is at the current time', async ({ page }) => {
+test('hover picks the field where it is at the current time', { tag: ['@time', '@hover'] }, async ({ page }) => {
   test.setTimeout(300_000);
   await waitForIdleLoader(page);
   await page.evaluate(() => window.__universeMap!.identifiersReady);
@@ -789,7 +789,7 @@ async function enableDeepTime(page: Page, years: number): Promise<void> {
   }, years);
 }
 
-test('the deep time toggle extends the range and reads out in millions of years', async ({
+test('the deep time toggle extends the range and reads out in millions of years', { tag: ['@deep'] }, async ({
   page,
 }) => {
   const slider = page.getByTestId('time-slider');
@@ -829,7 +829,7 @@ test('the deep time toggle extends the range and reads out in millions of years'
   expect(await clockYears(page)).toBe(1_000_000);
 });
 
-test('the deep disclosure replaces the Phase 4 one, and only in deep mode', async ({ page }) => {
+test('the deep disclosure replaces the Phase 4 one, and only in deep mode', { tag: ['@deep'] }, async ({ page }) => {
   await page.evaluate(async () => {
     window.__universeMap!.viewer.camera.position.set(0, 0, 50000);
     await new Promise((r) => setTimeout(r, 8000));
@@ -862,7 +862,7 @@ test('the deep disclosure replaces the Phase 4 one, and only in deep mode', asyn
   expect(await disclosure.textContent()).not.toContain('axisymmetric');
 });
 
-test('at 200 Myr the field is sheared, not rigidly translated', async ({ page }) => {
+test('at 200 Myr the field is sheared, not rigidly translated', { tag: ['@deep', '@render'] }, async ({ page }) => {
   test.setTimeout(300_000);
   await page.evaluate(async () => {
     window.__universeMap!.viewer.camera.position.set(0, 0, 50000);

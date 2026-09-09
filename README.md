@@ -79,9 +79,34 @@ in place:
 |---|---|
 | `npm run dev` | run it |
 | `npm test` | unit tests |
-| `npm run test:e2e` | Playwright suite (~13 min) |
+| `npm run test:e2e` | full Playwright suite (~18 min) |
+| `npm run test:e2e:fast` | everything except the perf test (~15 min) |
+| `npm run test:e2e:<group>` | one area only — see below |
 | `npm run typecheck` / `npm run lint` / `npm run build` | |
 | `.venv/Scripts/python -m pytest pipeline/tests` | pipeline tests |
+
+### Running only the tests you need
+
+The end-to-end suite runs single-worker against a software rasteriser, so a
+full pass is ~18 minutes. Every test carries a tag, so you can run just the
+area you touched:
+
+| Script | Tag | Tests | Run it after touching |
+|---|---|---|---|
+| `test:e2e:core` | `@core` | 3 | tile format, streaming, loader |
+| `test:e2e:layers` | `@layers` | 5 | the layer stack, crossfades, units |
+| `test:e2e:time` | `@time`, `@deep` | 8 | the clock, orbits, disclosures |
+| `test:e2e:hover` | `@hover`, `@modeled` | 5 | picking, hover card, modeled flags |
+| `test:e2e:render` | `@render`, `@labels` | 5 | shaders, brightness, labels, anchors |
+| `test:e2e:perf` | `@perf` | 1 | LOD or the byte budget |
+| `test:e2e:fast` | all but `@perf` | 20 | anything, when you can skip the 3-minute perf test |
+
+`npm run test:e2e:list` prints every test with its tags. Tags compose, so a
+test can belong to more than one group; the groups above overlap deliberately.
+
+Run the full suite before tagging a phase or shipping. Unit tests
+(`npm test`, ~2 s) and `npm run typecheck` are cheap enough to run on
+every change.
 
 ## How it works
 

@@ -9,7 +9,15 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "bake:fixture": ".venv/Scripts/python -m universe_pipeline.cli --synthetic 2000000"
+    "bake:fixture": ".venv/Scripts/python -m universe_pipeline.cli --synthetic 2000000",
+    "test:e2e:fast": "playwright test --grep-invert @perf",
+    "test:e2e:core": "playwright test --grep @core",
+    "test:e2e:layers": "playwright test --grep @layers",
+    "test:e2e:time": "playwright test --grep \"@time|@deep\"",
+    "test:e2e:hover": "playwright test --grep \"@hover|@modeled\"",
+    "test:e2e:render": "playwright test --grep \"@render|@labels\"",
+    "test:e2e:perf": "playwright test --grep @perf",
+    "test:e2e:list": "playwright test --list"
   },
   "dependencies": {
     "three": "^0.180.0"
