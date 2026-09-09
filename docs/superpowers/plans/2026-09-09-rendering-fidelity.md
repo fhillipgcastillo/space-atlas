@@ -543,6 +543,12 @@ git commit -m "fix(app): lower the brightness floors so flux compensation can ac
 
 **Files:** modify `e2e/render.spec.ts`
 
+- [ ] **Step 0: Re-validate the inherited luminance thresholds**
+
+`e2e/render.spec.ts` asserts `mean > 1.5` and `litFraction > 0.03` at 50,000 ly. Those constants were measured against the renderer as it stood **before** flux compensation and before the floors moved, and the agent that wrote them flagged the exposure explicitly. Task 2 raised brightness, which makes them safer; Task 4b lowers the floors, which pushes the other way.
+
+Measure the live values first and report them against the thresholds. If the margin has collapsed, widen the threshold **downward only if the view is genuinely still legible** — and say so. Do not raise a threshold to make a dimmer view pass; that converts a regression detector into a rubber stamp.
+
 - [ ] **Step 1: Add two tests**
 
 ```typescript
