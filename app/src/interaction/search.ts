@@ -18,6 +18,18 @@ const VIEWING_DISTANCE_UNITS = 1;
 
 const FLIGHT_SECONDS = 1.6;
 
+// The index runs to hundreds of thousands of entries, so lowercasing every name
+// on every keystroke is the whole cost of a search.
+const folded = new WeakMap<SearchEntry, string>();
+
+function foldedName(entry: SearchEntry): string {
+  const cached = folded.get(entry);
+  if (cached !== undefined) return cached;
+  const lower = entry.name.toLowerCase();
+  folded.set(entry, lower);
+  return lower;
+}
+
 export function search(
   index: SearchEntry[],
   query: string,
@@ -29,7 +41,7 @@ export function search(
   const hits: { entry: SearchEntry; rank: number; at: number; order: number }[] = [];
   for (let order = 0; order < index.length; order++) {
     const entry = index[order]!;
-    const name = entry.name.toLowerCase();
+    const name = foldedName(entry);
     const at = name.indexOf(needle);
     if (at === -1) continue;
     hits.push({ entry, rank: name === needle ? 0 : at === 0 ? 1 : 2, at, order });
