@@ -1,7 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 // Importing the app's own global declaration keeps this spec from drifting
 // from the hook it drives.
-import '../app/src/main.js';
+// Type-only: importing it for its side effects would run boot() in the Node
+// test process, where there is no document.
+import type {} from '../app/src/main.js';
 
 const meshCount = (page: Page): Promise<number> =>
   page.evaluate(() => window.__universeMap!.manager.meshes.size);
@@ -276,4 +278,45 @@ test('frame cost scales with the points drawn and streaming converges', async ({
   // thrash cycling tiles in and out under the byte budget.
   expect(settled.maxInFlight).toBe(0);
   expect(settled.after).toBe(settled.before);
+});
+
+test('crosses from the stellar layer out to the local universe', async ({ page }) => {
+  const start = await page.evaluate(() => window.__universeMap!.activeLayer().key);
+  expect(start).toBe('stellar-neighbourhood');
+
+  const crossing = await page.evaluate(async () => {
+    const { viewer, selection, activeLayer } = window.__universeMap!;
+    const seen: { key: string; blend: number }[] = [];
+    // Sweep outward through the transition band and record what the stack does.
+    for (const distance of [3000, 30000, 300000, 3e6, 3e7, 1e8]) {
+      viewer.camera.position.set(0, 0, distance);
+      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => requestAnimationFrame(r));
+      seen.push({ key: activeLayer().key, blend: selection().blend });
+    }
+    return { seen, end: activeLayer().key };
+  });
+
+  console.log(`crossing ${JSON.stringify(crossing.seen)}`);
+  // Somewhere in the sweep both layers must be partly visible.
+  expect(crossing.seen.some((s) => s.blend > 0 && s.blend < 1)).toBe(true);
+  expect(crossing.end).toBe('local-universe');
+});
+
+test('shows the solar system when the camera is close to the Sun', async ({ page }) => {
+  const key = await page.evaluate(async () => {
+    const { viewer, activeLayer } = window.__universeMap!;
+    viewer.camera.position.set(0, 0, 1e-6);
+    await new Promise((r) => requestAnimationFrame(r));
+    await new Promise((r) => requestAnimationFrame(r));
+    return activeLayer().key;
+  });
+  expect(key).toBe('solar-system');
+});
+
+test('every layer keeps its own unit', async ({ page }) => {
+  const units = await page.evaluate(() =>
+    window.__universeMap!.layers.map((l) => `${l.def.key}:${l.def.unit}`),
+  );
+  expect(units).toEqual(['solar-system:AU', 'stellar-neighbourhood:ly', 'local-universe:Mly']);
 });

@@ -2,14 +2,20 @@ import { Vector3 } from 'three';
 import { Viewer } from './core/viewer.js';
 import { Anchor } from './interaction/anchors.js';
 import { HoverController } from './interaction/hover.js';
+import { LayerRenderer, opacityForBlend } from './layers/layerRenderer.js';
+import { LAYERS } from './layers/registry.js';
+import {
+  rescalePosition,
+  selectLayers,
+  type LayerDef,
+  type LayerSelection,
+} from './layers/stack.js';
 import { PickingPass } from './render/picking.js';
-import { createPointMaterial } from './render/pointMaterial.js';
-import { TileManager } from './tiles/tileManager.js';
-import { fetchTileset, type Tileset } from './tiles/tileset.js';
+import type { TileManager } from './tiles/tileManager.js';
+import type { Tileset } from './tiles/tileset.js';
 import { HoverCard } from './ui/hoverCard.js';
 
-const LAYER_URL = '/data/stellar-neighbourhood';
-const PARSECS_PER_LIGHT_YEAR = 1 / 3.261563777167433;
+const METRES_PER_PARSEC = 3.0856775814913673e16;
 
 declare global {
   interface Window {
@@ -21,36 +27,45 @@ declare global {
       picking: PickingPass;
       hover: HoverController;
       identifiersReady: Promise<void>;
+      layers: LayerRenderer[];
+      selection: () => LayerSelection;
+      activeLayer: () => LayerDef;
     };
   }
 }
 
-async function fetchIdentifiers(): Promise<BigUint64Array> {
-  const response = await fetch(`${LAYER_URL}/ids.bin`);
-  if (!response.ok) throw new Error(`ids: HTTP ${response.status}`);
+// A layer with no identifier sidecar answers 404; that is "no identifiers", not
+// a failure, so hover falls back to its generic label.
+async function loadIdentifiers(url: string): Promise<BigUint64Array | undefined> {
+  const response = await fetch(`${url}/ids.bin`);
+  if (!response.ok) return undefined;
   return new BigUint64Array(await response.arrayBuffer());
 }
 
-// The identifier table is tens of megabytes and only hover needs it, so the
-// starfield must never wait on it: until it lands, hover says "Star".
-let identifiers: BigUint64Array | undefined;
-
 async function boot(): Promise<void> {
   const viewer = new Viewer(document.body);
-  const tileset = await fetchTileset(LAYER_URL);
-  const material = createPointMaterial(PARSECS_PER_LIGHT_YEAR);
-  const manager = new TileManager(LAYER_URL, tileset, material);
 
-  viewer.add(manager.group);
-  // Far enough out that the root subsample reads as a field.
-  viewer.camera.position.set(0, 0, 3000);
-
-  const identifiersReady = fetchIdentifiers().then(
-    (ids) => {
-      identifiers = ids;
-    },
-    (error: unknown) => console.warn('identifier table unavailable', error),
+  const renderers = await Promise.all(
+    LAYERS.map((def) => LayerRenderer.create(def, def.unitInMetres / METRES_PER_PARSEC)),
   );
+  for (const renderer of renderers) viewer.add(renderer.group);
+
+  // The identifier tables are tens of megabytes and only hover needs them, so
+  // the field must never wait on them.
+  const identifiers = new Map<string, BigUint64Array>();
+  const identifiersReady = Promise.all(
+    LAYERS.map(async (def) => {
+      const ids = await loadIdentifiers(def.url).catch((error: unknown) => {
+        console.warn(`identifier table unavailable for ${def.key}`, error);
+        return undefined;
+      });
+      if (ids) identifiers.set(def.key, ids);
+    }),
+  ).then(() => undefined);
+
+  let primary = renderers[1]!;
+  let active = primary.def;
+  viewer.camera.position.set(0, 0, 3000);
 
   const picking = new PickingPass(viewer.renderer, viewer.scene, viewer.camera);
   const card = new HoverCard(document.body);
@@ -58,43 +73,82 @@ async function boot(): Promise<void> {
     picking,
     card,
     {
-      unit: tileset.unit,
-      tileForSlot: (slot) => manager.tilesBySlot.get(slot),
+      get unit() {
+        return primary.def.unit;
+      },
+      tileForSlot: (slot) => primary.manager.tilesBySlot.get(slot),
       catalogId: (tile, index) => {
         const local = tile.localId[index];
-        return local === undefined ? undefined : identifiers?.[local];
+        if (local === undefined) return undefined;
+        return identifiers.get(primary.def.key)?.[local];
       },
     },
     viewer.renderer.domElement,
   );
 
-  // Earth sits at the origin of this layer; the label is permanent so the
-  // viewer always knows where they are.
   const earth = new Anchor('Earth', new Vector3(0, 0, 0), document.body);
 
+  let selection = selectLayers(0, LAYERS);
   const frameTimes: number[] = [];
+
   viewer.onFrame((dt) => {
     frameTimes.push(dt * 1000);
     if (frameTimes.length > 600) frameTimes.shift();
-    manager.update({
-      position: viewer.camera.position,
-      screenHeight: viewer.renderer.domElement.height,
-      fovRadians: (viewer.camera.fov * Math.PI) / 180,
-    });
+
+    const distanceMetres = viewer.camera.position.length() * active.unitInMetres;
+    selection = selectLayers(distanceMetres, LAYERS);
+
+    if (selection.primary.key !== active.key) {
+      // Hand the camera over once, on change only. Repeating this every frame
+      // would compound rounding into visible drift.
+      const scaled = rescalePosition(
+        viewer.camera.position.length(),
+        active.unitInMetres,
+        selection.primary.unitInMetres,
+      );
+      viewer.camera.position.setLength(scaled);
+      active = selection.primary;
+    }
+
+    primary = renderers.find((r) => r.def.key === selection.primary.key) ?? primary;
+
+    for (const renderer of renderers) {
+      renderer.applyActiveLayer(active);
+      if (renderer.def.key === selection.primary.key) {
+        renderer.setOpacity(opacityForBlend('primary', selection.secondary ? selection.blend : 0));
+      } else if (renderer.def.key === selection.secondary?.key) {
+        renderer.setOpacity(opacityForBlend('secondary', selection.blend));
+      } else {
+        renderer.setOpacity(0);
+      }
+      renderer.update({
+        position: viewer.camera.position,
+        screenHeight: viewer.renderer.domElement.height,
+        fovRadians: (viewer.camera.fov * Math.PI) / 180,
+      });
+    }
+
     earth.update(viewer.camera, window.innerWidth, window.innerHeight);
   });
 
   viewer.start();
   window.__universeMap = {
     viewer,
-    manager,
-    tileset,
+    get manager() {
+      return primary.manager;
+    },
+    get tileset() {
+      return primary.tileset;
+    },
     frameTimes,
     picking,
     hover,
     identifiersReady,
+    layers: renderers,
+    selection: () => selection,
+    activeLayer: () => active,
   };
-  console.info(`loaded ${tileset.layer}: ${tileset.pointCount} points total`);
+  console.info(`layers loaded: ${renderers.map((r) => r.def.key).join(', ')}`);
 }
 
 void boot();
