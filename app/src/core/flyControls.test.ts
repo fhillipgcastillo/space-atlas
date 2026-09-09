@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
+import { PerspectiveCamera } from 'three';
 import { describe, expect, it } from 'vitest';
-import { speedForDistance } from './flyControls.js';
+import { FlyControls, speedForDistance } from './flyControls.js';
 
 const options = { fraction: 0.5, min: 0.001, max: 1e6 };
 
@@ -26,5 +28,26 @@ describe('speedForDistance', () => {
     for (let i = 1; i < samples.length; i++) {
       expect(samples[i]!).toBeGreaterThanOrEqual(samples[i - 1]!);
     }
+  });
+});
+
+describe('orientation resync', () => {
+  it('picks up a camera turned by something else before dragging', () => {
+    // Fly-to calls lookAt; without a resync the first drag snaps the view back
+    // to wherever the camera pointed when FlyControls was constructed.
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    const element = document.createElement('div');
+    const controls = new FlyControls(camera, element);
+
+    camera.lookAt(1, 0, 0);
+    const afterLookAt = camera.quaternion.clone();
+
+    element.dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true }));
+    element.dispatchEvent(
+      new PointerEvent('pointermove', { movementX: 0, movementY: 0, bubbles: true }),
+    );
+
+    expect(camera.quaternion.angleTo(afterLookAt)).toBeLessThan(1e-6);
+    controls.dispose();
   });
 });

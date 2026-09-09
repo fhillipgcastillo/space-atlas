@@ -72,7 +72,11 @@ export class FlyControls {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
-    if (event.button === 0) this.dragging = true;
+    if (event.button !== 0) return;
+    // Re-read the camera: anything else may have turned it since the last drag
+    // (fly-to calls lookAt), and a stale euler would snap the view back.
+    this.euler.setFromQuaternion(this.camera.quaternion);
+    this.dragging = true;
   };
 
   private readonly onPointerUp = (): void => {
