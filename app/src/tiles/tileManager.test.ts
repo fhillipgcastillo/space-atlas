@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_OPTIONS, maxNodesForBudget } from './tileManager.js';
 import type { TileNode } from './tileset.js';
-import { selectNodes, type ViewState } from './traversal.js';
+import { selectNodes, selectNodesWithFlux, type ViewState } from './traversal.js';
 
 describe('maxNodesForBudget', () => {
   it('never lets a full selection exceed the byte budget', () => {
@@ -88,5 +88,38 @@ describe('the shipped screen-space error threshold', () => {
       expect(previous / current).toBeLessThanOrEqual(9);
       previous = current;
     }
+  });
+});
+
+describe('flux weighting', () => {
+  it('a coarse selection represents the same total light as a fine one', () => {
+    const child: TileNode = {
+      path: 'r0',
+      boundingBox: { min: [-1, -1, -1], max: [1, 1, 1] },
+      geometricError: 1e-6,
+      pointCount: 800,
+      totalPointCount: 800,
+      children: [],
+    };
+    const root: TileNode = {
+      path: 'r',
+      boundingBox: { min: [-1, -1, -1], max: [1, 1, 1] },
+      geometricError: 1e9,
+      pointCount: 100,
+      totalPointCount: 900,
+      children: [child],
+    };
+
+    const near: ViewState = { position: { x: 0, y: 0, z: 0 }, screenHeight: 1080, fovRadians: 1 };
+    const far: ViewState = { position: { x: 1e12, y: 0, z: 0 }, screenHeight: 1080, fovRadians: 1 };
+
+    const total = (v: ViewState): number =>
+      selectNodesWithFlux(root, v, 8, 100).reduce(
+        (sum, s) => sum + s.node.pointCount * s.fluxWeight,
+        0,
+      );
+
+    expect(total(near)).toBeCloseTo(900);
+    expect(total(far)).toBeCloseTo(900);
   });
 });

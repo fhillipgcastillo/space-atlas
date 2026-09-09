@@ -25,6 +25,7 @@ uniform float uAlphaScale;
 uniform float uParsecsPerUnit;
 uniform float uModeledDim;
 uniform float uShowModeled;
+uniform float uFluxWeight;
 
 in vec3 position;
 in float aColourIndex;
@@ -52,7 +53,9 @@ void main() {
 
   float distancePc = max(length(viewPosition.xyz) * uParsecsPerUnit, 1e-6);
   float apparentMag = aAbsMag + 5.0 * (log2(distancePc) / log2(10.0)) - 5.0;
-  float brightness = pow(10.0, -0.4 * apparentMag);
+  // Scaling brightness, not alpha: a subsample standing in for eight points
+  // should read as eight points of light, in size as well as opacity.
+  float brightness = pow(10.0, -0.4 * apparentMag) * uFluxWeight;
 
   gl_PointSize = clamp(uSizeScale * sqrt(brightness) * uPixelRatio, uMinSize, uMaxSize);
   // The dim factor is applied after the clamp: below the 0.02 floor an
@@ -135,6 +138,7 @@ export function createPointMaterial(unitInParsecs: number): RawShaderMaterial {
       uParsecsPerUnit: { value: unitInParsecs },
       uModeledDim: { value: DEFAULT_MODELED_DIM },
       uShowModeled: { value: 1 },
+      uFluxWeight: { value: 1 },
       uLayerOpacity: { value: 1 },
       uColourRamp: { value: ramp },
     },

@@ -5,7 +5,7 @@ import { TileCache } from './cache.js';
 import type { DecodedTile } from './format.js';
 import { TileLoader } from './loader.js';
 import { fetchTile, type Tileset } from './tileset.js';
-import { nodeScreenSpaceError, selectNodes, type ViewState } from './traversal.js';
+import { nodeScreenSpaceError, selectNodesWithFlux, type ViewState } from './traversal.js';
 
 export interface TileManagerOptions {
   screenSpaceErrorThreshold: number;
@@ -49,6 +49,7 @@ export class TileManager {
   private readonly cache: TileCache<Points>;
   private readonly loader: TileLoader<DecodedTile>;
   private readonly slotByPath = new Map<string, number>();
+  private readonly fluxWeights = new Map<string, number>();
   private nextSlot = 0;
 
   constructor(
@@ -81,6 +82,7 @@ export class TileManager {
     );
     this.loader.onLoaded = (path, tile) => {
       const mesh = createTileMesh(tile, this.material);
+      this.applyFluxWeight(path, mesh);
       const slot = this.slotFor(path);
       mesh.userData['tileSlot'] = slot;
       this.meshes.set(path, mesh);
@@ -102,13 +104,17 @@ export class TileManager {
   }
 
   update(view: ViewState): void {
-    const wanted = selectNodes(
+    const selection = selectNodesWithFlux(
       this.tileset.root,
       view,
       this.options.screenSpaceErrorThreshold,
       this.options.maxVisibleNodes,
     );
 
+    this.fluxWeights.clear();
+    for (const { node, fluxWeight } of selection) this.fluxWeights.set(node.path, fluxWeight);
+
+    const wanted = selection.map((s) => s.node);
     const wantedPaths = new Set(wanted.map((node) => node.path));
     this.loader.retainOnly(wantedPaths);
 
@@ -125,11 +131,20 @@ export class TileManager {
     // instant until the byte budget reclaims them.
     for (const [path, mesh] of this.meshes) {
       mesh.visible = wantedPaths.has(path);
+      if (mesh.visible) this.applyFluxWeight(path, mesh);
     }
   }
 
   dispose(): void {
     this.cache.clear();
+  }
+
+  // createTileMesh clones the material per tile, and the weight differs per
+  // tile, so it can only be written on the clone.
+  private applyFluxWeight(path: string, mesh: Points): void {
+    if (Array.isArray(mesh.material)) return;
+    const uniform = (mesh.material as RawShaderMaterial).uniforms['uFluxWeight'];
+    if (uniform) uniform.value = this.fluxWeights.get(path) ?? 1;
   }
 
   private slotFor(path: string): number {
