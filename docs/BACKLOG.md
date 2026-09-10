@@ -2,34 +2,31 @@
 
 Known, non-blocking. Each is understood well enough to pick up cold.
 
-## LOD tile seams — not reproducible, entry kept for the measurements
+## LOD tile seams - FIXED, kept for the measurements
 
-The original report was rectangular brightness steps where octree levels meet:
-concentric rounded-square steps at 350,000 ly and a bright square with an
-in/out ratio of 8.34 at 120,000 ly.
+Reported as rectangular brightness steps. Two attempts on a software
+rasteriser failed to reproduce it and it was nearly retired; it is real, and
+only shows on a GPU. Found on an RTX 3060 as a hard-edged rectangle in the
+Milky Way core with a horizontal seam splitting it into two densities.
 
-**Two independent attempts failed to reproduce it.** Radial mean-luminance
-profiles metered through the composer with `setAutoExposure(false)` fall off
-smoothly with no plateau or step — at 120,000 ly the largest second difference
-is 3.77 on a 70-unit profile, at 350,000 ly it is 6.16 on a 154-unit profile.
-That is a galactic-disk falloff, not seam rings. Most likely fixed as a side
-effect of tone mapping and adaptive exposure rather than by anything aimed at
-it.
+Cause: the point budget was starving refinement. Of 77 drawn tiles the median
+flux weight was exactly 1.0 while seven carried up to 30.6 -- a fully refined
+node touching a coarse one asked to be thirty times brighter, which nothing
+survives past the alpha ceiling of 1.0 and the point size cap.
 
-Two measurements worth keeping, because they kill the proposed fix:
+Fixed by raising the point budget from 1.5M to 6M (same 131 fps, worst weight
+falls to 4.8), refining sibling groups atomically, and scaling the size ceiling
+by the flux weight rather than globally.
 
-- **`uMinSize` is inert.** 1.0, 0.5 and 0.0 render identically to three decimal
-  places at 120,000 ly, 350,000 ly and 1 Mly. GL clamps point size, so that
-  floor can never be swept.
+Two measurements worth keeping:
+
+- **`uMinSize` is inert.** 1.0, 0.5 and 0.0 render identically at every
+  distance tested. GL clamps point size; that floor can never be swept.
 - **Lowering the alpha floor deletes light rather than rebalancing it.** At
-  120,000 ly, 0.02 gives mean 10.820 / 52.5% lit; 0.005 gives 2.608 / 12.3%;
-  0.001 gives 1.638 / 9.7%. The floor is carrying the far field, not distorting
-  it, and sweeping it down makes core-to-background contrast worse (39 to 352)
-  and the 350,000 ly radial profile raggeder.
+  120,000 ly, 0.02 gives 52.5% lit; 0.001 gives 9.7%.
 
-Anyone reopening this must reproduce the 8.34 ratio first and record the camera
-that shows it. `uMinAlpha` is now a uniform so the floor can be swept at runtime
-without a rebuild.
+**Never measure this on SwiftShader.** The software path did not show the
+artifact at all, and two rounds were wasted concluding it was gone.
 
 ## Sagittarius A* unpickable beyond ~2,000 ly
 
