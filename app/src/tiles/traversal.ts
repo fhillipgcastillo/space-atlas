@@ -91,8 +91,10 @@ export function selectNodesWithFlux(
   view: ViewState,
   threshold: number,
   maxNodes: number,
+  maxPoints = Number.POSITIVE_INFINITY,
 ): SelectedNode[] {
   const selected: TileNode[] = [];
+  let points = 0;
   const frontier: Candidate[] = nodeWithinCutoffs(root, view)
     ? [{ node: root, error: nodeScreenSpaceError(root, view) }]
     : [];
@@ -105,7 +107,12 @@ export function selectNodesWithFlux(
     const [candidate] = frontier.splice(bestIndex, 1);
     if (!candidate) break;
 
+    // The root always draws: an empty screen is worse than an over-budget one,
+    // and it is the coarsest stand-in the tree has.
+    if (selected.length > 0 && points + candidate.node.pointCount > maxPoints) break;
+
     selected.push(candidate.node);
+    points += candidate.node.pointCount;
     if (candidate.error <= threshold) continue;
 
     for (const child of candidate.node.children) {

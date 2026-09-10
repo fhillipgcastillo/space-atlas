@@ -10,6 +10,8 @@ import { nodeScreenSpaceError, selectNodesWithFlux, type ViewState } from './tra
 export interface TileManagerOptions {
   screenSpaceErrorThreshold: number;
   maxVisibleNodes: number;
+  /** Points a single layer may draw at once, spent highest-error-first. */
+  pointBudget: number;
   maxInFlight: number;
   gpuByteBudget: number;
 }
@@ -31,6 +33,11 @@ export const DEFAULT_OPTIONS: TileManagerOptions = {
   // the root box, collapsing the whole 1705-tile layer to its root subsample.
   screenSpaceErrorThreshold: 1,
   maxVisibleNodes: maxNodesForBudget(GPU_BYTE_BUDGET, 41),
+  // Node count is a poor proxy for cost: cosmic-web's eight depth-1 nodes hold
+  // 43,000 points each while its twenty-four depth-2 nodes hold 476. Budgeting
+  // points bounds the frame at any distance; the priority queue spends it on
+  // the highest-error nodes first.
+  pointBudget: 1_500_000,
   maxInFlight: 8,
   gpuByteBudget: GPU_BYTE_BUDGET,
 };
@@ -52,6 +59,7 @@ export class TileManager {
   private readonly fluxWeights = new Map<string, number>();
   private maxVisibleNodes: number;
   private errorThreshold: number;
+  private pointBudget: number;
 
   constructor(
     private readonly baseUrl: string,
@@ -62,6 +70,7 @@ export class TileManager {
   ) {
     this.maxVisibleNodes = options.maxVisibleNodes;
     this.errorThreshold = options.screenSpaceErrorThreshold;
+    this.pointBudget = options.pointBudget;
     this.cache = new TileCache<Points>(options.gpuByteBudget);
     this.cache.onEvict = (path, mesh) => {
       this.group.remove(mesh);
@@ -125,6 +134,14 @@ export class TileManager {
     this.maxVisibleNodes = Math.max(1, Math.floor(value));
   }
 
+  getPointBudget(): number {
+    return this.pointBudget;
+  }
+
+  setPointBudget(value: number): void {
+    this.pointBudget = Math.max(1, Math.floor(value));
+  }
+
   getScreenSpaceErrorThreshold(): number {
     return this.errorThreshold;
   }
@@ -139,6 +156,7 @@ export class TileManager {
       view,
       this.errorThreshold,
       this.maxVisibleNodes,
+      this.pointBudget,
     );
 
     this.fluxWeights.clear();

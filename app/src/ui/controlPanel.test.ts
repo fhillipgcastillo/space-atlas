@@ -93,15 +93,18 @@ function makeViewer(): ViewerKnobs & { state: Record<string, number | boolean> }
   };
 }
 
-function makeLayer(): LayerKnobs & { manager: { maxVisibleNodes: number; sse: number } } {
+function makeLayer(): LayerKnobs & { manager: { maxVisibleNodes: number; sse: number; pointBudget: number } } {
   const manager = {
     maxVisibleNodes: 199,
     sse: 1,
+    pointBudget: 1_500_000,
     gpuByteBudget: 512 * 1024 * 1024,
     getMaxVisibleNodes: () => manager.maxVisibleNodes,
     setMaxVisibleNodes: (v: number) => void (manager.maxVisibleNodes = v),
     getScreenSpaceErrorThreshold: () => manager.sse,
     setScreenSpaceErrorThreshold: (v: number) => void (manager.sse = v),
+    getPointBudget: () => manager.pointBudget,
+    setPointBudget: (v: number) => void (manager.pointBudget = v),
   };
   let modeledDim = 0.45;
   let showModeled = true;

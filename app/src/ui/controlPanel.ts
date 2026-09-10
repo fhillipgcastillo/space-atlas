@@ -27,6 +27,8 @@ export interface TileKnobs {
   setMaxVisibleNodes(value: number): void;
   getScreenSpaceErrorThreshold(): number;
   setScreenSpaceErrorThreshold(value: number): void;
+  getPointBudget(): number;
+  setPointBudget(value: number): void;
 }
 
 export interface LayerKnobs {
@@ -412,6 +414,18 @@ export class ControlPanel {
     const first = layers[0];
     const group = this.group('Population');
     if (first) {
+      this.slider(group, {
+        label: 'Point budget',
+        testId: 'point-budget',
+        min: 50_000,
+        max: 20_000_000,
+        scale: 'log',
+        integer: true,
+        get: () => first.manager.getPointBudget(),
+        set: (v) => {
+          for (const layer of layers) layer.manager.setPointBudget(v);
+        },
+      });
       this.slider(group, {
         label: 'Max tiles / layer',
         testId: 'max-visible-nodes',
