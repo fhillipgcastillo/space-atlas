@@ -2,15 +2,34 @@
 
 Known, non-blocking. Each is understood well enough to pick up cold.
 
-## LOD tile seams
+## LOD tile seams — not reproducible, entry kept for the measurements
 
-Rectangular brightness steps where octree levels meet — three or four concentric rounded-square steps at 350,000 ly, a bright square with hard vertical edges at 120,000 ly (in/out ratio 8.34).
+The original report was rectangular brightness steps where octree levels meet:
+concentric rounded-square steps at 350,000 ly and a bright square with an
+in/out ratio of 8.34 at 120,000 ly.
 
-Diagnosed: a point-**density** discontinuity, not a brightness deficit. Flux compensation is implemented and arithmetically exact (`Σ pointCount × fluxWeight` equals the root total at every distance) but has no visible effect, because `clamp(brightness * uAlphaScale, 0.02, 1.0)` and `clamp(…, 1.0, 8.0)` pin distant points to the floor — a 63% coverage that should brighten the frame 1.58× measured 1.0005×.
+**Two independent attempts failed to reproduce it.** Radial mean-luminance
+profiles metered through the composer with `setAutoExposure(false)` fall off
+smoothly with no plateau or step — at 120,000 ly the largest second difference
+is 3.77 on a 70-unit profile, at 350,000 ly it is 6.16 on a 154-unit profile.
+That is a galactic-disk falloff, not seam rings. Most likely fixed as a side
+effect of tone mapping and adaptive exposure rather than by anything aimed at
+it.
 
-Next step: sweep those two floors downward now that tone mapping carries the range. Metric to move: the 120,000 ly box ratio toward 1.0, and the 350,000 ly radial profile losing its steps, without the galaxy vanishing at 1 Mly. **Meter with `setAutoExposure(false)`** — the controller otherwise compensates for exactly the change being measured.
+Two measurements worth keeping, because they kill the proposed fix:
 
-Cosmetic. Does not block any feature.
+- **`uMinSize` is inert.** 1.0, 0.5 and 0.0 render identically to three decimal
+  places at 120,000 ly, 350,000 ly and 1 Mly. GL clamps point size, so that
+  floor can never be swept.
+- **Lowering the alpha floor deletes light rather than rebalancing it.** At
+  120,000 ly, 0.02 gives mean 10.820 / 52.5% lit; 0.005 gives 2.608 / 12.3%;
+  0.001 gives 1.638 / 9.7%. The floor is carrying the far field, not distorting
+  it, and sweeping it down makes core-to-background contrast worse (39 to 352)
+  and the 350,000 ly radial profile raggeder.
+
+Anyone reopening this must reproduce the 8.34 ratio first and record the camera
+that shows it. `uMinAlpha` is now a uniform so the floor can be swept at runtime
+without a rebuild.
 
 ## Sagittarius A* unpickable beyond ~2,000 ly
 

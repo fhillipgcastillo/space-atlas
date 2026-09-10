@@ -128,6 +128,7 @@ uniform float uSizeScale;
 uniform float uMinSize;
 uniform float uMaxSize;
 uniform float uAlphaScale;
+uniform float uMinAlpha;
 uniform float uParsecsPerUnit;
 uniform float uModeledDim;
 uniform float uShowModeled;
@@ -183,9 +184,9 @@ void main() {
   float brightness = pow(10.0, -0.4 * apparentMag) * uFluxWeight;
 
   gl_PointSize = clamp(uSizeScale * sqrt(brightness) * uPixelRatio, uMinSize, uMaxSize);
-  // The dim factor is applied after the clamp: below the 0.02 floor an
-  // undimmed and a dimmed modeled point would otherwise emit the same light.
-  vAlpha = clamp(brightness * uAlphaScale, 0.02, 1.0) * mix(1.0, uModeledDim, modeled);
+  // The dim factor is applied after the clamp: below the floor an undimmed and a
+  // dimmed modeled point would otherwise emit the same light.
+  vAlpha = clamp(brightness * uAlphaScale, uMinAlpha, 1.0) * mix(1.0, uModeledDim, modeled);
   vColourIndex = aColourIndex;
 
   gl_Position = projectionMatrix * viewPosition;
@@ -230,15 +231,22 @@ export const DEFAULT_MODELED_DIM = 0.45;
 
 export const DEFAULT_SIZE_SCALE = 500;
 export const DEFAULT_MIN_SIZE = 1;
+export const DEFAULT_MIN_ALPHA = 0.02;
 export const DEFAULT_MAX_SIZE = 8;
 
-export type PointUniformName = 'uAlphaScale' | 'uSizeScale' | 'uMinSize' | 'uMaxSize';
+export type PointUniformName =
+  | 'uAlphaScale'
+  | 'uSizeScale'
+  | 'uMinSize'
+  | 'uMaxSize'
+  | 'uMinAlpha';
 
 const pointUniforms: Record<PointUniformName, number> = {
   uAlphaScale: DEFAULT_ALPHA_SCALE,
   uSizeScale: DEFAULT_SIZE_SCALE,
   uMinSize: DEFAULT_MIN_SIZE,
   uMaxSize: DEFAULT_MAX_SIZE,
+  uMinAlpha: DEFAULT_MIN_ALPHA,
 };
 
 // Materials handed out by createPointMaterial. tileMesh clones one of these per
@@ -286,6 +294,7 @@ export function createPointMaterial(unitInParsecs: number): RawShaderMaterial {
       uMinSize: { value: pointUniforms.uMinSize },
       uMaxSize: { value: pointUniforms.uMaxSize },
       uAlphaScale: { value: pointUniforms.uAlphaScale },
+      uMinAlpha: { value: pointUniforms.uMinAlpha },
       uParsecsPerUnit: { value: unitInParsecs },
       uModeledDim: { value: DEFAULT_MODELED_DIM },
       uShowModeled: { value: 1 },
