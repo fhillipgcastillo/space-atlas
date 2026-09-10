@@ -48,6 +48,14 @@ anything to identify it. Search by name to fly there across layers. Earth and
 the Milky Way are permanently labelled; other labels appear and declutter as
 they become relevant.
 
+The control panel (top left) exposes the parameters worth playing with —
+brightness and the faint-end stretch, point size, bloom, exposure, the modeled
+population, the LOD point budget and detail threshold, labels, and a live stats
+readout with frame time and points drawn. The hamburger hides all of it.
+
+Layers you have flown past keep drawing behind you, so the solar system has a
+real sky and the Galaxy is visible from inside the stellar neighbourhood.
+
 The time control runs the clock to ±1,000,000 years on measured velocities.
 Switching on **deep time** extends that to ±250,000,000 — about one galactic
 year — and swaps the straight-line model for orbits in the galactic potential,
