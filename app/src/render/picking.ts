@@ -19,12 +19,16 @@ import {
 } from 'three';
 import { decodePickId, MAX_VERTICES_PER_TILE, type PickId } from './pickIds.js';
 import { DEEP_MODEL_LINEAR, NO_CUTOFF, TIME_POSITION_GLSL } from './pointMaterial.js';
+import { CLASS_BLACK_HOLE } from './typeFlags.js';
 
 // Sub-pixel stars need a hit area larger than the point they are drawn as, and
 // never smaller than the widest star the visual pass can draw (uMaxSize, 8).
 const PICK_POINT_SIZE_CSS = 6;
 const MIN_PICK_POINT_SIZE = 10;
 const SCISSOR_RADIUS = 2;
+// Depth splits into one band per priority level, so the class decides first and
+// distance decides inside a class.
+const PICK_PRIORITY_BANDS = 2;
 
 const VERTEX = /* glsl */ `
 precision highp float;
@@ -47,6 +51,7 @@ in float aTypeFlags;
 
 flat out uint vPickId;
 flat out uint vModeled;
+flat out uint vPriority;
 out float vFragDepth;
 
 void main() {
@@ -54,6 +59,8 @@ void main() {
   float flagBits = floor(aTypeFlags * 255.0 + 0.5);
   float modeled = mod(floor(flagBits / 16.0), 2.0);
   vModeled = modeled > 0.5 ? 1u : 0u;
+
+  vPriority = abs(mod(flagBits, 16.0) - ${CLASS_BLACK_HOLE}.0) < 0.5 ? 1u : 0u;
 
   vPickId = uint(uTileSlot) * ${MAX_VERTICES_PER_TILE}u + uint(gl_VertexID) + 1u;
   vFragDepth = 1.0;
@@ -92,6 +99,7 @@ uniform float uLogDepthBufFC;
 
 flat in uint vPickId;
 flat in uint vModeled;
+flat in uint vPriority;
 in float vFragDepth;
 
 out vec4 fragColour;
@@ -102,7 +110,10 @@ void main() {
   // Four decades of depth range: a linear 1/z buffer resolves only tens of
   // light-years at kiloparsec distances, so two stars on one line of sight tie
   // and the draw order decides the hit. Logarithmic depth keeps them apart.
-  gl_FragDepth = log2(vFragDepth) * uLogDepthBufFC * 0.5;
+  float depth = clamp(log2(vFragDepth) * uLogDepthBufFC * 0.5, 0.0, 1.0);
+  // A fragment only exists where the point covers this pixel, so the band shifts
+  // the winner among objects already under the cursor, never the hit area.
+  gl_FragDepth = (float(${PICK_PRIORITY_BANDS - 1}u - vPriority) + depth) / ${PICK_PRIORITY_BANDS}.0;
   fragColour = vec4(
     float(vPickId & 255u) / 255.0,
     float((vPickId >> 8u) & 255u) / 255.0,
