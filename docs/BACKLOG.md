@@ -28,6 +28,24 @@ Two measurements worth keeping:
 **Never measure this on SwiftShader.** The software path did not show the
 artifact at all, and two rounds were wasted concluding it was gone.
 
+## Notable objects are not exempt from LOD
+
+Nothing guarantees a named object, a black hole or an anchor survives node
+selection, so an object can vanish at distance and pop back in on approach.
+
+Deferred rather than built, because the cause of the reported symptom turned
+out to be budget starvation, and raising the point budget to 6M fixed it: the
+Milky Way layer now draws every visible tile. The guarantee is still missing,
+and matters most for the stellar layer, where 32.7M points across 1,705 nodes
+cannot all be resident.
+
+Doing it properly needs the bake to record which nodes contain notable objects,
+so the traversal can force them in regardless of budget -- a tileset change, not
+a renderer one. The cheaper alternative, drawing them as a separate overlay from
+the search index, is unattractive: that index costs about 103 MB of background
+traffic and takes ~36 s to settle, so the overlay would arrive late and cost
+more than it saves.
+
 ## Sagittarius A* unpickable beyond ~2,000 ly
 
 The 10 CSS px pick radius means whichever globular cluster wins the depth test covers it. At 40,000 ly hovering the galactic centre returns Terzan 9, NGC 6624, Terzan 5 — never the black hole. Fix would be a depth-aware or class-priority tiebreak in `picking.ts`.
