@@ -94,8 +94,10 @@ export function selectNodesWithFlux(
   maxPoints = Number.POSITIVE_INFINITY,
 ): SelectedNode[] {
   const selected: TileNode[] = [];
-  let points = 0;
-  const frontier: Candidate[] = nodeWithinCutoffs(root, view)
+  const rootVisible = nodeWithinCutoffs(root, view);
+  // Reserved at push time, so the budget is exact rather than discovered late.
+  let points = rootVisible ? root.pointCount : 0;
+  const frontier: Candidate[] = rootVisible
     ? [{ node: root, error: nodeScreenSpaceError(root, view) }]
     : [];
 
@@ -107,16 +109,25 @@ export function selectNodesWithFlux(
     const [candidate] = frontier.splice(bestIndex, 1);
     if (!candidate) break;
 
-    // The root always draws: an empty screen is worse than an over-budget one,
-    // and it is the coarsest stand-in the tree has.
-    if (selected.length > 0 && points + candidate.node.pointCount > maxPoints) break;
-
     selected.push(candidate.node);
-    points += candidate.node.pointCount;
     if (candidate.error <= threshold) continue;
 
+    // Siblings refine together or not at all. Admitting half a group leaves a
+    // fully refined node touching a coarse one standing in for its whole
+    // subtree -- a flux weight of 1 against 30 -- and no brightness or size
+    // compensation survives the alpha and size ceilings at that ratio, so the
+    // cube boundary shows as a hard edge.
+    const kids: TileNode[] = [];
+    let groupPoints = 0;
     for (const child of candidate.node.children) {
       if (!nodeWithinCutoffs(child, view)) continue;
+      kids.push(child);
+      groupPoints += child.pointCount;
+    }
+    if (kids.length === 0 || points + groupPoints > maxPoints) continue;
+
+    points += groupPoints;
+    for (const child of kids) {
       frontier.push({ node: child, error: nodeScreenSpaceError(child, view) });
     }
   }

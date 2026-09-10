@@ -251,7 +251,9 @@ export const DEFAULT_MIN_ALPHA = 0.02;
  * not a better default.
  */
 export const DEFAULT_FAINT_BOOST = 1;
-export const DEFAULT_MAX_SIZE = 8;
+// Headroom for flux compensation: a node standing in for 30x its own points
+// needs sqrt(30) ~ 5.5x the radius, which clipped at 8.
+export const DEFAULT_MAX_SIZE = 24;
 
 export type PointUniformName =
   | 'uAlphaScale'

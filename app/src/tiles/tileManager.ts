@@ -37,7 +37,14 @@ export const DEFAULT_OPTIONS: TileManagerOptions = {
   // 43,000 points each while its twenty-four depth-2 nodes hold 476. Budgeting
   // points bounds the frame at any distance; the priority queue spends it on
   // the highest-error nodes first.
-  pointBudget: 1_500_000,
+  //
+  // Six million rather than the 1.5M first chosen. Starving the budget is what
+  // produced the cube-shaped bright region in the Milky Way: refinement stopped
+  // mid-level, leaving coarse nodes standing in for 30x their own points, and
+  // no compensation survives the alpha and size ceilings at that ratio. At 6M
+  // the same view draws every visible tile, the worst weight falls to 4.8, and
+  // the measured frame rate is unchanged -- 131 fps either way on an RTX 3060.
+  pointBudget: 6_000_000,
   maxInFlight: 8,
   gpuByteBudget: GPU_BYTE_BUDGET,
 };
