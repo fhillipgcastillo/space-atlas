@@ -89,7 +89,11 @@ test('renders something other than a black screen', { tag: ['@core', '@render'] 
 
   const withStars = await canvas.screenshot();
   await page.evaluate(() => {
-    window.__universeMap!.manager.group.visible = false;
+    // Every layer, not just the primary: layers already flown past keep drawing
+    // as background sky, so hiding one no longer blanks the canvas. It has to be
+    // the manager's group -- the frame loop rewrites layer.group.visible from
+    // the opacity on every tick, so hiding that one lasts a single frame.
+    for (const layer of window.__universeMap!.layers) layer.manager.group.visible = false;
   });
   await page.waitForTimeout(1500);
   const withoutStars = await canvas.screenshot();
@@ -216,6 +220,16 @@ test('frame cost scales with the points drawn and streaming converges', { tag: [
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
     return { before, after: manager.meshes.size, maxInFlight };
+  });
+
+  // The point budget has to be out of the way for this comparison: at its
+  // default both camera positions saturate it, the point counts converge
+  // (5.84M against 6.00M, a ratio of 1.03) and the test measures nothing. With
+  // room, distance drives the count again -- 7.3M against 9.7M -- and the node
+  // cap governs the selection as it is meant to. Twelve million clears both
+  // without changing which tiles are chosen.
+  await page.evaluate(() => {
+    for (const layer of window.__universeMap!.layers) layer.manager.setPointBudget(12_000_000);
   });
 
   // Both states are sampled from the same fully-populated cache, alternating
