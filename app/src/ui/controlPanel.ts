@@ -42,11 +42,17 @@ export interface LabelKnobs {
   setVisible(visible: boolean): void;
 }
 
+export interface StatsKnobs {
+  isVisible(): boolean;
+  setVisible(visible: boolean): void;
+}
+
 export interface ControlPanelDeps {
   viewer: ViewerKnobs;
   /** Every layer renderer: a knob writes to all of them and reads the first. */
   layers: readonly LayerKnobs[];
   labels: LabelKnobs;
+  stats?: StatsKnobs;
   /** Other UI roots the chrome toggle hides. The canvas must not be among them. */
   chrome?: readonly HTMLElement[];
   /** KeyboardEvent.key that toggles the chrome; null disables the shortcut. */
@@ -475,6 +481,16 @@ export class ControlPanel {
         this.deps.labels.setVisible(on);
       },
     });
+
+    const stats = this.deps.stats;
+    if (stats) {
+      this.toggle(group, {
+        label: 'Show stats',
+        testId: 'show-stats',
+        get: () => stats.isVisible(),
+        set: (on) => stats.setVisible(on),
+      });
+    }
   }
 
   private group(name: string): HTMLDivElement {

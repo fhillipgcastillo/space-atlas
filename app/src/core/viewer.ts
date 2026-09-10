@@ -35,9 +35,13 @@ const BLOOM_RADIUS = 0.4;
 // into a uniform white sheet instead of reading as stars.
 const BLOOM_THRESHOLD = 0.9;
 
-// readRenderTargetPixels stalls the pipeline, and adaptation runs over hundreds
-// of milliseconds, so four samples a second is plenty.
+// readRenderTargetPixels drains the GPU queue before it returns, so each sample
+// costs a whole frame's worth of pending work. Four a second while the exposure
+// is still moving; once it settles, back off -- a static view has nothing to
+// measure, and at low frame rates the fixed interval fires almost every frame.
 const MEASURE_INTERVAL_SECONDS = 0.25;
+const MAX_MEASURE_INTERVAL_SECONDS = 2;
+const SETTLED_FRACTION = 0.02;
 
 export class Viewer {
   readonly scene = new Scene();
@@ -53,6 +57,7 @@ export class Viewer {
   private running = false;
   private autoExposure = true;
   private sinceMeasure = MEASURE_INTERVAL_SECONDS;
+  private measureInterval = MEASURE_INTERVAL_SECONDS;
   private desiredExposure = 1;
 
   constructor(parent: HTMLElement) {
@@ -93,6 +98,10 @@ export class Viewer {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
+
+    // Each pass resets info, so a read after composer.render() sees only the
+    // final fullscreen pass. Reset once per frame and let it accumulate.
+    this.renderer.info.autoReset = false;
 
     this.meter = new ExposureMeter(this.renderer);
 
@@ -155,7 +164,10 @@ export class Viewer {
   setAutoExposure(enabled: boolean): void {
     this.autoExposure = enabled;
     // Measure on the next frame rather than coasting on a stale reading.
-    if (enabled) this.sinceMeasure = MEASURE_INTERVAL_SECONDS;
+    if (enabled) {
+      this.sinceMeasure = this.measureInterval;
+      this.measureInterval = MEASURE_INTERVAL_SECONDS;
+    }
   }
 
   /** Composes one frame. Measuring the canvas any other way misses tone mapping. */
@@ -241,6 +253,7 @@ export class Viewer {
   }
 
   private readonly tick = (): void => {
+    this.renderer.info.reset();
     const now = performance.now();
     const dt = (now - this.lastFrame) / 1000;
     this.lastFrame = now;
@@ -260,9 +273,15 @@ export class Viewer {
 
   private updateExposure(composed: WebGLRenderTarget, dt: number): void {
     this.sinceMeasure += dt;
-    if (this.sinceMeasure >= MEASURE_INTERVAL_SECONDS) {
+    if (this.sinceMeasure >= this.measureInterval) {
       this.sinceMeasure = 0;
-      this.desiredExposure = exposureForLuminance(this.meter.measure(composed));
+      const next = exposureForLuminance(this.meter.measure(composed));
+      const settled =
+        Math.abs(next - this.desiredExposure) <= SETTLED_FRACTION * Math.max(next, 1e-6);
+      this.measureInterval = settled
+        ? Math.min(this.measureInterval * 2, MAX_MEASURE_INTERVAL_SECONDS)
+        : MEASURE_INTERVAL_SECONDS;
+      this.desiredExposure = next;
     }
     this.setExposure(adaptExposure(this.getExposure(), this.desiredExposure, dt));
   }

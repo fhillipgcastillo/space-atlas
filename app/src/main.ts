@@ -21,6 +21,7 @@ import { ModeledNotice } from './ui/modeledNotice.js';
 import { RangeControls } from './ui/rangeControls.js';
 import { ScaleHud } from './ui/scaleHud.js';
 import { SearchBox } from './ui/searchBox.js';
+import { StatsPanel } from './ui/statsPanel.js';
 import { createControlPanel, type ControlPanel } from './ui/controlPanel.js';
 import { sampleTimeStats, TimeControls } from './ui/timeControls.js';
 
@@ -45,6 +46,7 @@ declare global {
       rangeControls: RangeControls;
       timeControls: TimeControls;
       controlPanel: ControlPanel;
+      statsPanel: StatsPanel;
     };
   }
 }
@@ -122,10 +124,13 @@ async function boot(): Promise<void> {
   const labelLayer = new LabelLayer(document.body);
   const LABEL_BOX = { width: 120, height: 16 };
   const MAX_LABELS = 40;
+  const MAX_LABEL_OBJECTS = 4000;
   // Keyed by layer, so only what is on screen contributes. The source is the
   // names index, so modeled points can never appear here.
   const labelObjects = new Map<string, NamedObject[]>();
   const rangeControls = new RangeControls(document.body);
+  const statsPanel = new StatsPanel(document.body);
+  let labelsScanned = 0;
   const timeControls = new TimeControls(
     document.body,
     (years) => viewer.setTimeYears(years),
@@ -193,6 +198,7 @@ async function boot(): Promise<void> {
       ...(labelObjects.get(selection.primary.key) ?? []),
       ...(selection.secondary ? (labelObjects.get(selection.secondary.key) ?? []) : []),
     ];
+    labelsScanned = named.length;
     labelLayer.update(
       declutter(
         buildCandidates(
@@ -230,6 +236,25 @@ async function boot(): Promise<void> {
       );
     }
 
+    statsPanel.update(dt, () => {
+      const info = viewer.renderer.info;
+      let visible = 0;
+      for (const { mesh } of primary.manager.tilesBySlot.values()) if (mesh.visible) visible++;
+      return {
+        frameMs: frameTimes,
+        points: info.render.points,
+        calls: info.render.calls,
+        geometries: info.memory.geometries,
+        textures: info.memory.textures,
+        tilesLoaded: primary.manager.meshes.size,
+        tilesVisible: visible,
+        inFlight: primary.manager.inFlightCount,
+        labelCandidates: labelsScanned,
+        layerKey: active.key,
+        distance: `${viewer.camera.position.length().toPrecision(4)} ${active.unit}`,
+      };
+    });
+
     const showing = modeledRenderers.filter((r) => r.currentOpacity > 0);
     if (showing.length > 0) {
       modeledNotice.setFraction(Math.max(...showing.map((r) => r.modeledFraction())));
@@ -256,7 +281,12 @@ async function boot(): Promise<void> {
       const def = LAYERS.find((l) => l.key === entry.layerKey);
       if (!def) continue;
       const bucket = labelObjects.get(entry.layerKey) ?? [];
-      bucket.push({ name: entry.name, position: entry.position, unitInMetres: def.unitInMetres });
+      // buildCandidates projects every one of these every frame, and cosmic-web
+      // alone carries 423,578 names. Only MAX_LABELS survive declutter, so the
+      // cap costs nothing visible and bounds the per-frame work.
+      if (bucket.length < MAX_LABEL_OBJECTS) {
+        bucket.push({ name: entry.name, position: entry.position, unitInMetres: def.unitInMetres });
+      }
       labelObjects.set(entry.layerKey, bucket);
     }
     searchBox.setEntries(searchEntries);
@@ -268,6 +298,7 @@ async function boot(): Promise<void> {
     viewer,
     layers: renderers,
     labels: labelLayer,
+    stats: statsPanel,
     chrome: [
       scaleHud.element,
       rangeControls.element,
@@ -275,6 +306,7 @@ async function boot(): Promise<void> {
       searchBox.root,
       modeledNotice.element,
       earth.element,
+      statsPanel.element,
     ],
     toggleKey: 'Escape',
   });
@@ -301,6 +333,7 @@ async function boot(): Promise<void> {
     rangeControls,
     timeControls,
     controlPanel,
+    statsPanel,
   };
   console.info(`layers loaded: ${renderers.map((r) => r.def.key).join(', ')}`);
 }
