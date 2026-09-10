@@ -198,3 +198,42 @@ describe('selectLayers with a zero lower band edge', () => {
     }
   });
 });
+
+describe('crossfade width', () => {
+  const LY = 9460730472580800;
+  const pair: LayerDef[] = [
+    { key: 'inner', url: '', unit: 'ly', unitInMetres: LY, minRadius: 0.01, maxRadius: 5000, origin: 'Sol' },
+    { key: 'outer', url: '', unit: 'ly', unitInMetres: LY, minRadius: 3000, maxRadius: 400000, origin: 'Sol' },
+  ];
+
+  it('blends across a wider span than the registry overlap alone', () => {
+    // The registry overlaps these two over 3,000-5,000 ly, a ratio of 1.67,
+    // which is too short a run to read as a fade.
+    const at = (ly: number) => selectLayers(ly * LY, pair);
+    expect(at(4000).secondary?.key).toBe('outer');
+    // Outside the raw overlap on both sides, and still blending.
+    expect(at(2400).secondary?.key).toBe('outer');
+    expect(at(6000).secondary?.key).toBe('outer');
+    const wide = at(2400).blend;
+    expect(wide).toBeGreaterThan(0);
+    expect(wide).toBeLessThan(1);
+  });
+
+  it('keeps the fade monotonic and centred on the boundary', () => {
+    const blendAt = (ly: number) => selectLayers(ly * LY, pair).blend;
+    expect(blendAt(2400)).toBeLessThan(blendAt(4000));
+    expect(blendAt(4000)).toBeLessThan(blendAt(6000));
+    // The geometric centre of 3,000-5,000 is 3,873; the fade should sit near a
+    // half there rather than being lopsided.
+    expect(blendAt(Math.sqrt(3000 * 5000))).toBeCloseTo(0.5, 2);
+  });
+
+  it('leaves a band that is already wide enough alone', () => {
+    const widePair: LayerDef[] = [
+      { ...pair[0]!, maxRadius: 100 },
+      { ...pair[1]!, minRadius: 1 },
+    ];
+    // 1 to 100 is a ratio of 100; widening would only blur a good boundary.
+    expect(selectLayers(0.9 * LY, widePair).secondary).toBeNull();
+  });
+});

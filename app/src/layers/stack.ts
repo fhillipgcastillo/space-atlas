@@ -17,6 +17,24 @@ export interface LayerSelection {
 const outerEdge = (layer: LayerDef): number => layer.maxRadius * layer.unitInMetres;
 const innerEdge = (layer: LayerDef): number => layer.minRadius * layer.unitInMetres;
 
+/**
+ * Least ratio a crossfade may span. The registry's radii are the pipeline's
+ * data contract -- min_radius decides which objects a layer is baked with -- so
+ * the band is widened here instead of by moving them. Natural bands wider than
+ * this are left alone.
+ */
+const MIN_BAND_RATIO = 3.3;
+
+function widen(lo: number, hi: number): [number, number] {
+  if (!(lo > 0) || !(hi > lo)) return [lo, hi];
+  if (hi / lo >= MIN_BAND_RATIO) return [lo, hi];
+  // Geometric centre, so the band grows the same factor in each direction and
+  // the log-space blend stays symmetric about the boundary.
+  const centre = Math.sqrt(lo * hi);
+  const half = Math.sqrt(MIN_BAND_RATIO);
+  return [centre / half, centre * half];
+}
+
 export function rescalePosition(
   distance: number,
   fromUnitInMetres: number,
@@ -41,8 +59,7 @@ export function selectLayers(distanceMetres: number, layers: LayerDef[]): LayerS
     const edgeB = innerEdge(outer);
     // The edges fall in either order: a gap gives edgeA < edgeB, an overlap
     // the reverse.
-    const bandLo = Math.min(edgeA, edgeB);
-    const bandHi = Math.max(edgeA, edgeB);
+    const [bandLo, bandHi] = widen(Math.min(edgeA, edgeB), Math.max(edgeA, edgeB));
 
     if (distanceMetres <= bandLo) return { primary: inner, secondary: null, blend: 0 };
     if (distanceMetres < bandHi) {
