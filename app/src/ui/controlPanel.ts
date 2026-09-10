@@ -1,6 +1,8 @@
 export interface ViewerKnobs {
   getAlphaScale(): number;
   setAlphaScale(value: number): void;
+  getFaintBoost(): number;
+  setFaintBoost(value: number): void;
   getSizeScale(): number;
   setSizeScale(value: number): void;
   getMinSize(): number;
@@ -309,6 +311,15 @@ export class ControlPanel {
       scale: 'log',
       get: () => viewer.getAlphaScale(),
       set: (v) => viewer.setAlphaScale(v),
+    });
+    this.slider(group, {
+      label: 'Faint boost',
+      testId: 'faint-boost',
+      min: 1,
+      max: 20_000,
+      scale: 'log',
+      get: () => viewer.getFaintBoost(),
+      set: (v) => viewer.setFaintBoost(v),
     });
     this.slider(group, {
       label: 'Size scale',

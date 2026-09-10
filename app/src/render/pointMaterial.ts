@@ -129,6 +129,7 @@ uniform float uMinSize;
 uniform float uMaxSize;
 uniform float uAlphaScale;
 uniform float uMinAlpha;
+uniform float uFaintBoost;
 uniform float uParsecsPerUnit;
 uniform float uModeledDim;
 uniform float uShowModeled;
@@ -184,9 +185,17 @@ void main() {
   float brightness = pow(10.0, -0.4 * apparentMag) * uFluxWeight;
 
   gl_PointSize = clamp(uSizeScale * sqrt(brightness) * uPixelRatio, uMinSize, uMaxSize);
+  // Flux spans many decades, so a linear map has no exposure that shows a faint
+  // star without saturating a bright one. asinh is linear at the faint end and
+  // logarithmic at the bright end -- the stretch imaging uses for the same
+  // reason. uFaintBoost = 1 reduces to the old linear response.
+  float gained = brightness * uAlphaScale;
+  float stretched = uFaintBoost > 1.0
+      ? asinh(gained * uFaintBoost) / asinh(uFaintBoost)
+      : gained;
   // The dim factor is applied after the clamp: below the floor an undimmed and a
   // dimmed modeled point would otherwise emit the same light.
-  vAlpha = clamp(brightness * uAlphaScale, uMinAlpha, 1.0) * mix(1.0, uModeledDim, modeled);
+  vAlpha = clamp(stretched, uMinAlpha, 1.0) * mix(1.0, uModeledDim, modeled);
   vColourIndex = aColourIndex;
 
   gl_Position = projectionMatrix * viewPosition;
@@ -232,6 +241,16 @@ export const DEFAULT_MODELED_DIM = 0.45;
 export const DEFAULT_SIZE_SCALE = 500;
 export const DEFAULT_MIN_SIZE = 1;
 export const DEFAULT_MIN_ALPHA = 0.02;
+
+/**
+ * Knee of the asinh response: higher lifts faint points further. 1 is linear.
+ * Defaults to linear because measurement did not support a change: at a Milky
+ * Way view, matching the linear lit fraction costs slightly more blow-out
+ * (71.5% lit at 3.93% blown, against 3.79% linear). Both curves clip at the
+ * same white point, so the stretch trades rather than wins. It is a control,
+ * not a better default.
+ */
+export const DEFAULT_FAINT_BOOST = 1;
 export const DEFAULT_MAX_SIZE = 8;
 
 export type PointUniformName =
@@ -239,7 +258,8 @@ export type PointUniformName =
   | 'uSizeScale'
   | 'uMinSize'
   | 'uMaxSize'
-  | 'uMinAlpha';
+  | 'uMinAlpha'
+  | 'uFaintBoost';
 
 const pointUniforms: Record<PointUniformName, number> = {
   uAlphaScale: DEFAULT_ALPHA_SCALE,
@@ -247,6 +267,7 @@ const pointUniforms: Record<PointUniformName, number> = {
   uMinSize: DEFAULT_MIN_SIZE,
   uMaxSize: DEFAULT_MAX_SIZE,
   uMinAlpha: DEFAULT_MIN_ALPHA,
+  uFaintBoost: DEFAULT_FAINT_BOOST,
 };
 
 // Materials handed out by createPointMaterial. tileMesh clones one of these per
@@ -295,6 +316,7 @@ export function createPointMaterial(unitInParsecs: number): RawShaderMaterial {
       uMaxSize: { value: pointUniforms.uMaxSize },
       uAlphaScale: { value: pointUniforms.uAlphaScale },
       uMinAlpha: { value: pointUniforms.uMinAlpha },
+      uFaintBoost: { value: pointUniforms.uFaintBoost },
       uParsecsPerUnit: { value: unitInParsecs },
       uModeledDim: { value: DEFAULT_MODELED_DIM },
       uShowModeled: { value: 1 },

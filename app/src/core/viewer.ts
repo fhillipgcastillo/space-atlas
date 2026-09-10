@@ -175,6 +175,14 @@ export class Viewer {
     this.composer.render();
   }
 
+  getFaintBoost(): number {
+    return getPointUniform('uFaintBoost');
+  }
+
+  setFaintBoost(value: number): void {
+    this.setPointUniform('uFaintBoost', Math.max(value, 1));
+  }
+
   getAlphaScale(): number {
     return getPointUniform('uAlphaScale');
   }

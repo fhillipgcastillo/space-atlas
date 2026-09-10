@@ -67,9 +67,12 @@ function makeViewer(): ViewerKnobs & { state: Record<string, number | boolean> }
     bloomThreshold: 0.9,
     exposure: 1,
     autoExposure: true,
+    faintBoost: 1,
   };
   return {
     state,
+    getFaintBoost: () => state['faintBoost'] as number,
+    setFaintBoost: (v) => void (state['faintBoost'] = v),
     getAlphaScale: () => state['alphaScale'] as number,
     setAlphaScale: (v) => void (state['alphaScale'] = v),
     getSizeScale: () => state['sizeScale'] as number,
