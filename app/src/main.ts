@@ -143,6 +143,13 @@ async function boot(): Promise<void> {
   const STATS_INTERVAL = 0.5;
   let sinceStats = STATS_INTERVAL;
   const modeledRenderers = renderers.filter((r) => r.def.key === 'milky-way');
+  // Standing inside a shell of distant objects is exactly when you should see
+  // them: from Earth there are more stars overhead, not none. The layer beyond
+  // the primary keeps drawing as sky rather than being culled for being too far.
+  const BACKGROUND_OPACITY = 0.6;
+  // Drawn finer than the subject: at close range the nearest stars otherwise
+  // sit on the size ceiling and the sky reads as overlapping blobs.
+  const BACKGROUND_SIZE = 0.4;
 
   let selection = selectLayers(0, LAYERS);
   const frameTimes: number[] = [];
@@ -167,6 +174,13 @@ async function boot(): Promise<void> {
     }
 
     primary = renderers.find((r) => r.def.key === selection.primary.key) ?? primary;
+    // Only when nothing is already crossfading: during a handover the pair is
+    // the whole picture and a third layer would just add light.
+    const primaryIndex = LAYERS.findIndex((def) => def.key === selection.primary.key);
+    const backgroundKey =
+      !selection.secondary && primaryIndex >= 0 && primaryIndex + 1 < LAYERS.length
+        ? LAYERS[primaryIndex + 1]!.key
+        : undefined;
 
     for (const renderer of renderers) {
       renderer.applyActiveLayer(active);
@@ -179,9 +193,12 @@ async function boot(): Promise<void> {
         renderer.setOpacity(opacityForBlend('primary', selection.secondary ? selection.blend : 0));
       } else if (renderer.def.key === selection.secondary?.key) {
         renderer.setOpacity(opacityForBlend('secondary', selection.blend));
+      } else if (renderer.def.key === backgroundKey) {
+        renderer.setOpacity(BACKGROUND_OPACITY);
       } else {
         renderer.setOpacity(0);
       }
+      renderer.setSizeMultiplier(renderer.def.key === backgroundKey ? BACKGROUND_SIZE : 1);
       renderer.update({
         position: viewer.camera.position,
         screenHeight: viewer.renderer.domElement.height,

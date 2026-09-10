@@ -5,6 +5,7 @@ import {
   DEEP_MODEL_LINEAR,
   DEEP_MODEL_ORBIT,
   DEFAULT_MODELED_DIM,
+  getPointUniform,
   NO_CUTOFF,
 } from '../render/pointMaterial.js';
 import { getTimeYears, velocityScaleForLayer } from '../render/timeline.js';
@@ -81,6 +82,11 @@ export class LayerRenderer {
 
   getModeledDim(): number {
     return this.modeledDim;
+  }
+
+  /** 1 draws at the panel's size; below that the layer reads as backdrop. */
+  setSizeMultiplier(multiplier: number): void {
+    this.setUniform('uSizeScale', getPointUniform('uSizeScale') * multiplier);
   }
 
   setModeledDim(value: number): void {

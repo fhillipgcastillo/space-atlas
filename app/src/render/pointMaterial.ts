@@ -184,7 +184,12 @@ void main() {
   // should read as eight points of light, in size as well as opacity.
   float brightness = pow(10.0, -0.4 * apparentMag) * uFluxWeight;
 
-  gl_PointSize = clamp(uSizeScale * sqrt(brightness) * uPixelRatio, uMinSize, uMaxSize);
+  // The ceiling scales with the stand-in factor rather than being raised for
+  // everyone: a fully refined tile keeps the tight cap, while a node drawing
+  // for more points than it holds gets the radius to cover the same area.
+  // Raising it globally instead turns bright nearby stars into fat blobs.
+  float sizeCeiling = uMaxSize * sqrt(max(uFluxWeight, 1.0));
+  gl_PointSize = clamp(uSizeScale * sqrt(brightness) * uPixelRatio, uMinSize, sizeCeiling);
   // Flux spans many decades, so a linear map has no exposure that shows a faint
   // star without saturating a bright one. asinh is linear at the faint end and
   // logarithmic at the bright end -- the stretch imaging uses for the same
@@ -251,9 +256,7 @@ export const DEFAULT_MIN_ALPHA = 0.02;
  * not a better default.
  */
 export const DEFAULT_FAINT_BOOST = 1;
-// Headroom for flux compensation: a node standing in for 30x its own points
-// needs sqrt(30) ~ 5.5x the radius, which clipped at 8.
-export const DEFAULT_MAX_SIZE = 24;
+export const DEFAULT_MAX_SIZE = 8;
 
 export type PointUniformName =
   | 'uAlphaScale'
