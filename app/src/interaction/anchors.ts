@@ -25,12 +25,11 @@ export function projectToScreen(
 
 export class Anchor {
   readonly element: HTMLDivElement;
+  private readonly world = new Vector3();
+  private active = true;
 
-  constructor(
-    label: string,
-    private readonly world: Vector3,
-    parent: HTMLElement,
-  ) {
+  constructor(label: string, world: Vector3, parent: HTMLElement) {
+    this.world.copy(world);
     this.element = document.createElement('div');
     this.element.textContent = label;
     this.element.dataset['anchor'] = label;
@@ -50,7 +49,20 @@ export class Anchor {
     parent.appendChild(this.element);
   }
 
+  /** An inactive anchor stays off screen whatever the projection says. */
+  setActive(active: boolean): void {
+    this.active = active;
+  }
+
+  moveTo(x: number, y: number, z: number): void {
+    this.world.set(x, y, z);
+  }
+
   update(camera: PerspectiveCamera, width: number, height: number): void {
+    if (!this.active) {
+      this.element.hidden = true;
+      return;
+    }
     const position = projectToScreen(this.world, camera, width, height);
     this.element.hidden = !position.visible;
     if (!position.visible) return;

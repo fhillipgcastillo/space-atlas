@@ -20,6 +20,7 @@ import {
   type LayerSelection,
 } from './layers/stack.js';
 import { PickingPass } from './render/picking.js';
+import { positionAtTime } from './render/timePosition.js';
 import type { TileManager } from './tiles/tileManager.js';
 import type { Tileset } from './tiles/tileset.js';
 import { HoverCard } from './ui/hoverCard.js';
@@ -32,6 +33,11 @@ import { createControlPanel, type ControlPanel } from './ui/controlPanel.js';
 import { sampleTimeStats, TimeControls } from './ui/timeControls.js';
 
 const METRES_PER_PARSEC = 3.0856775814913673e16;
+
+// The layer that draws the real Earth, rather than standing in for it.
+const SOLAR_SYSTEM_KEY = 'solar-system';
+
+const ORIGIN: readonly [number, number, number] = [0, 0, 0];
 
 declare global {
   interface Window {
@@ -216,8 +222,6 @@ async function boot(): Promise<void> {
     scaleHud.update(viewer.camera.position.length() * active.unitInMetres, active.key);
     rangeControls.setUnit(active.unit);
 
-    earth.update(viewer.camera, window.innerWidth, window.innerHeight);
-
     // The clock is shared, so a time set through the viewer has to reach the UI.
     // The shared clock is capped at the linear range, so past it the control owns
     // the time and writes it to the layers after their own update read the clock.
@@ -249,6 +253,23 @@ async function boot(): Promise<void> {
       );
     }
     labelLayer.update(declutter(candidates, LABEL_BOX, MAX_LABELS));
+
+    // Close in, the solar-system layer draws the real Earth and labels it; a
+    // marker on the origin as well would put that name on the Sun.
+    const solarSystemDrawn =
+      selection.primary.key === SOLAR_SYSTEM_KEY || selection.secondary?.key === SOLAR_SYSTEM_KEY;
+    earth.setActive(!solarSystemDrawn);
+    if (!solarSystemDrawn) {
+      // The origin is the Sun as it is today. Under deep time the Sun runs its
+      // own galactic orbit, which is the origin carried through the active
+      // layer's model with no heliocentric velocity of its own.
+      const time = rendererByKey.get(active.key)?.timeState();
+      const sun = time
+        ? positionAtTime(ORIGIN, ORIGIN, false, time.years, time.velocityScale, time.deep)
+        : ORIGIN;
+      earth.moveTo(sun[0], sun[1], sun[2]);
+    }
+    earth.update(viewer.camera, window.innerWidth, window.innerHeight);
 
     sinceStats += dt;
     if (timeControls.currentYears === 0) sinceStats = STATS_INTERVAL;
