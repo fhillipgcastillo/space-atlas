@@ -1,7 +1,7 @@
 import { Vector3 } from 'three';
 import { loadNames } from '../layers/sidecars.js';
 import type { LayerDef } from '../layers/stack.js';
-import { dequantizePosition } from '../tiles/format.js';
+import { decodeFloat16, dequantizePosition } from '../tiles/format.js';
 import { fetchTile, fetchTileset, type TileNode } from '../tiles/tileset.js';
 
 export interface SearchEntry {
@@ -9,6 +9,11 @@ export interface SearchEntry {
   layerKey: string;
   localId: number;
   position: [number, number, number];
+}
+
+/** A search entry plus the velocity the label layer needs to follow the clock. */
+export interface IndexedObject extends SearchEntry {
+  velocityKms: [number, number, number];
 }
 
 const DEFAULT_LIMIT = 10;
@@ -59,7 +64,7 @@ export function search(
 
 export async function buildSearchIndex(
   layers: LayerDef[],
-  onLayer?: (entries: SearchEntry[]) => void,
+  onLayer?: (entries: IndexedObject[]) => void,
 ): Promise<SearchEntry[]> {
   const perLayer = await Promise.all(
     layers.map(async (layer) => {
@@ -75,7 +80,7 @@ export async function buildSearchIndex(
 // to place a named object is to walk the tiles until it turns up. Layers
 // without a names.json - the 32.7M-object stellar layer - fetch nothing at all,
 // and the walk stops the moment every name has a position.
-async function indexLayer(layer: LayerDef): Promise<SearchEntry[]> {
+async function indexLayer(layer: LayerDef): Promise<IndexedObject[]> {
   const names = await loadNames(layer.url);
   if (names.size === 0) return [];
 
@@ -86,7 +91,7 @@ async function indexLayer(layer: LayerDef): Promise<SearchEntry[]> {
   if (!tileset) return [];
 
   const wanted = new Set(names.keys());
-  const entries: SearchEntry[] = [];
+  const entries: IndexedObject[] = [];
   const queue: TileNode[] = [tileset.root];
   const scratch = new Float64Array(3);
 
@@ -111,6 +116,11 @@ async function indexLayer(layer: LayerDef): Promise<SearchEntry[]> {
         layerKey: layer.key,
         localId,
         position: [scratch[0]!, scratch[1]!, scratch[2]!],
+        velocityKms: [
+          decodeFloat16(tile.velocity[i * 3] ?? 0),
+          decodeFloat16(tile.velocity[i * 3 + 1] ?? 0),
+          decodeFloat16(tile.velocity[i * 3 + 2] ?? 0),
+        ],
       });
     }
   }

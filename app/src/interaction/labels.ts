@@ -1,4 +1,6 @@
 import { Vector3, type PerspectiveCamera } from 'three';
+import type { Vec3 } from '../render/galacticOrbit.js';
+import { positionAtTime, type TimeState } from '../render/timePosition.js';
 import { projectToScreen } from './anchors.js';
 
 export interface LabelCandidate {
@@ -8,7 +10,7 @@ export interface LabelCandidate {
   priority: number;
 }
 
-/** Pixel size of the box a label is assumed to occupy, centred on its point. */
+/** Pixel size of the box a label is assumed to occupy. */
 export interface BoxSize {
   width: number;
   height: number;
@@ -20,6 +22,8 @@ export interface NamedObject {
   /** Metres in one unit of the layer `position` is expressed in. */
   unitInMetres: number;
   absMag?: number;
+  /** Absent for an object whose layer carries no velocity; it then never drifts. */
+  velocityKms?: Vec3;
 }
 
 const MIN_DISTANCE_METRES = 1e-9;
@@ -29,8 +33,8 @@ export function labelPriority(distanceMetres: number, absMag = 0): number {
   return -(absMag + 5 * Math.log10(Math.max(distanceMetres, MIN_DISTANCE_METRES)));
 }
 
-// Boxes are axis-aligned and centred on the point, matching how LabelLayer
-// positions its elements. Touching exactly at an edge is not an overlap, so a
+// Every label sits at the same offset from its point, so comparing the points
+// compares the boxes. Touching exactly at an edge is not an overlap, so a
 // separation of exactly boxSize.width keeps both labels.
 function overlaps(a: LabelCandidate, b: LabelCandidate, boxSize: BoxSize): boolean {
   return (
@@ -64,6 +68,9 @@ export function declutter(
 
 const world = new Vector3();
 
+/** Gap between the point and the bottom edge of its label. */
+const LABEL_GAP_PX = 8;
+
 // Candidates come from the named-object index only. Modeled points carry no
 // name and never enter that index, so they cannot be labelled by construction.
 export function buildCandidates(
@@ -72,18 +79,29 @@ export function buildCandidates(
   width: number,
   height: number,
   activeUnitInMetres: number,
+  time?: TimeState,
 ): LabelCandidate[] {
   const candidates: LabelCandidate[] = [];
   for (const object of objects) {
     const text = object.name.trim();
     if (text === '') continue;
 
+    // A named object is never modeled, so the modeled branch of the shader
+    // cannot apply to one.
+    const placed =
+      time && time.years !== 0 && object.velocityKms
+        ? positionAtTime(
+            object.position,
+            object.velocityKms,
+            false,
+            time.years,
+            time.velocityScale,
+            time.deep,
+          )
+        : object.position;
+
     const scale = object.unitInMetres / activeUnitInMetres;
-    world.set(
-      object.position[0] * scale,
-      object.position[1] * scale,
-      object.position[2] * scale,
-    );
+    world.set(placed[0] * scale, placed[1] * scale, placed[2] * scale);
     const screen = projectToScreen(world, camera, width, height);
     if (!screen.visible) continue;
     if (screen.x < 0 || screen.x > width || screen.y < 0 || screen.y > height) continue;
@@ -126,7 +144,7 @@ export class LabelLayer {
       const label = placed[i]!;
       const element = this.elements[i] ?? this.create();
       if (element.textContent !== label.text) element.textContent = label.text;
-      element.style.transform = `translate(-50%,-50%) translate(${label.screenX.toFixed(1)}px,${label.screenY.toFixed(1)}px)`;
+      element.style.transform = `translate(-50%,-100%) translate(${label.screenX.toFixed(1)}px,${(label.screenY - LABEL_GAP_PX).toFixed(1)}px)`;
       element.hidden = false;
     }
     for (let i = placed.length; i < this.elements.length; i++) {

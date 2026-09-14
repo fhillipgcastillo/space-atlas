@@ -2,7 +2,13 @@ import { Vector3 } from 'three';
 import { Viewer } from './core/viewer.js';
 import { Anchor } from './interaction/anchors.js';
 import { HoverController } from './interaction/hover.js';
-import { buildCandidates, declutter, LabelLayer, type NamedObject } from './interaction/labels.js';
+import {
+  buildCandidates,
+  declutter,
+  LabelLayer,
+  type LabelCandidate,
+  type NamedObject,
+} from './interaction/labels.js';
 import { buildSearchIndex, FlyTo, type SearchEntry } from './interaction/search.js';
 import { LayerRenderer, opacityForBlend } from './layers/layerRenderer.js';
 import { LAYERS } from './layers/registry.js';
@@ -58,6 +64,7 @@ async function boot(): Promise<void> {
     LAYERS.map((def) => LayerRenderer.create(def, def.unitInMetres / METRES_PER_PARSEC)),
   );
   for (const renderer of renderers) viewer.add(renderer.group);
+  const rendererByKey = new Map(renderers.map((renderer) => [renderer.def.key, renderer]));
 
   // The identifier tables are tens of megabytes and only hover needs them, so
   // the field must never wait on them.
@@ -211,25 +218,6 @@ async function boot(): Promise<void> {
 
     earth.update(viewer.camera, window.innerWidth, window.innerHeight);
 
-    const named = [
-      ...(labelObjects.get(selection.primary.key) ?? []),
-      ...(selection.secondary ? (labelObjects.get(selection.secondary.key) ?? []) : []),
-    ];
-    labelsScanned = named.length;
-    labelLayer.update(
-      declutter(
-        buildCandidates(
-          named,
-          viewer.camera,
-          window.innerWidth,
-          window.innerHeight,
-          active.unitInMetres,
-        ),
-        LABEL_BOX,
-        MAX_LABELS,
-      ),
-    );
-
     // The clock is shared, so a time set through the viewer has to reach the UI.
     // The shared clock is capped at the linear range, so past it the control owns
     // the time and writes it to the layers after their own update read the clock.
@@ -238,6 +226,30 @@ async function boot(): Promise<void> {
     if (timeControls.isDeep) {
       for (const renderer of renderers) renderer.setTimeYears(timeControls.currentYears);
     }
+
+    // Labelled last, and per layer: a label has to be placed at the time its own
+    // layer is about to be drawn at, which the two blocks above have just settled.
+    labelsScanned = 0;
+    const candidates: LabelCandidate[] = [];
+    const labelled = selection.secondary
+      ? [selection.primary, selection.secondary]
+      : [selection.primary];
+    for (const def of labelled) {
+      const objects = labelObjects.get(def.key) ?? [];
+      labelsScanned += objects.length;
+      candidates.push(
+        ...buildCandidates(
+          objects,
+          viewer.camera,
+          window.innerWidth,
+          window.innerHeight,
+          active.unitInMetres,
+          rendererByKey.get(def.key)?.timeState(),
+        ),
+      );
+    }
+    labelLayer.update(declutter(candidates, LABEL_BOX, MAX_LABELS));
+
     sinceStats += dt;
     if (timeControls.currentYears === 0) sinceStats = STATS_INTERVAL;
     else if (sinceStats >= STATS_INTERVAL) {
@@ -294,7 +306,14 @@ async function boot(): Promise<void> {
     // Spreading instead would overflow the stack: the cosmic-web layer alone
     // lands 423,578 names in one call.
     for (const entry of entries) {
-      searchEntries.push(entry);
+      // A lean copy: only the capped label bucket below needs the velocity, and
+      // holding one per entry costs tens of megabytes on the cosmic-web layer.
+      searchEntries.push({
+        name: entry.name,
+        layerKey: entry.layerKey,
+        localId: entry.localId,
+        position: entry.position,
+      });
       const def = LAYERS.find((l) => l.key === entry.layerKey);
       if (!def) continue;
       const bucket = labelObjects.get(entry.layerKey) ?? [];
@@ -302,7 +321,12 @@ async function boot(): Promise<void> {
       // alone carries 423,578 names. Only MAX_LABELS survive declutter, so the
       // cap costs nothing visible and bounds the per-frame work.
       if (bucket.length < MAX_LABEL_OBJECTS) {
-        bucket.push({ name: entry.name, position: entry.position, unitInMetres: def.unitInMetres });
+        bucket.push({
+          name: entry.name,
+          position: entry.position,
+          unitInMetres: def.unitInMetres,
+          velocityKms: entry.velocityKms,
+        });
       }
       labelObjects.set(entry.layerKey, bucket);
     }

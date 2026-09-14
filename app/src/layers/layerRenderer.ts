@@ -8,7 +8,9 @@ import {
   getPointUniform,
   NO_CUTOFF,
 } from '../render/pointMaterial.js';
+import { SOLAR_MOTION_KMS } from '../render/galacticOrbit.js';
 import { getTimeYears, velocityScaleForLayer } from '../render/timeline.js';
+import type { TimeState } from '../render/timePosition.js';
 import { FLAG_MODELED } from '../render/typeFlags.js';
 import type { DecodedTile } from '../tiles/format.js';
 import { TileManager } from '../tiles/tileManager.js';
@@ -78,6 +80,21 @@ export class LayerRenderer {
     if (on === this.deepTime) return;
     this.deepTime = on;
     this.setUniform('uDeepTime', on ? 1 : 0);
+  }
+
+  /** The time branch its material is drawing with, for placing a point in TS. */
+  timeState(): TimeState {
+    return {
+      years: this.timeYears,
+      velocityScale: velocityScaleForLayer(this.def.unitInMetres),
+      deep: this.deepTime
+        ? {
+            model: deepModelForLayer(this.def),
+            layerParsecsPerUnit: this.def.unitInMetres / METRES_PER_PARSEC,
+            solarMotionKms: SOLAR_MOTION_KMS,
+          }
+        : undefined,
+    };
   }
 
   getModeledDim(): number {
